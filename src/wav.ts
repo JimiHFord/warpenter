@@ -11,6 +11,7 @@ export interface ExportOptions {
 
 const DEFAULT_SAMPLE_RATE = 44100;
 const WAVETABLE_DESIGNER_STATE_CHUNK = "wtds";
+const WAVETABLE_CREATOR_INFO = "Created by Warpenter - https://github.com/JimiHFord/warpenter";
 
 function clampSample(sample: number): number {
   if (!Number.isFinite(sample)) {
@@ -82,6 +83,26 @@ function stringPayload(value: string): ArrayBuffer {
   const payload = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(payload).set(bytes);
   return payload;
+}
+
+function infoStringPayload(value: string): ArrayBuffer {
+  return stringPayload(`${value}\0`);
+}
+
+function createInfoListChunk(entries: Array<[string, string]>): ArrayBuffer {
+  const subchunks = entries.map(([id, value]) => createChunk(id, infoStringPayload(value)));
+  const payloadSize = 4 + subchunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const payload = new ArrayBuffer(payloadSize);
+  const view = new DataView(payload);
+  writeAscii(view, 0, "INFO");
+
+  let offset = 4;
+  for (const chunk of subchunks) {
+    new Uint8Array(payload, offset).set(new Uint8Array(chunk));
+    offset += chunk.byteLength;
+  }
+
+  return createChunk("LIST", payload);
 }
 
 function isRiffWave(buffer: ArrayBuffer): boolean {
@@ -156,11 +177,18 @@ export function attachWavetableStateMetadata(buffer: ArrayBuffer, encodedState: 
     throw new Error("Wavetable state metadata can only be attached to a RIFF/WAVE file.");
   }
 
-  const metadata = createChunk(WAVETABLE_DESIGNER_STATE_CHUNK, stringPayload(encodedState));
-  const output = new ArrayBuffer(buffer.byteLength + metadata.byteLength);
+  const metadata = [
+    createChunk(WAVETABLE_DESIGNER_STATE_CHUNK, stringPayload(encodedState)),
+    createInfoListChunk([["ISFT", WAVETABLE_CREATOR_INFO]]),
+  ];
+  const output = new ArrayBuffer(buffer.byteLength + metadata.reduce((sum, chunk) => sum + chunk.byteLength, 0));
   const bytes = new Uint8Array(output);
   bytes.set(new Uint8Array(buffer), 0);
-  bytes.set(new Uint8Array(metadata), buffer.byteLength);
+  let offset = buffer.byteLength;
+  for (const chunk of metadata) {
+    bytes.set(new Uint8Array(chunk), offset);
+    offset += chunk.byteLength;
+  }
 
   new DataView(output).setUint32(4, output.byteLength - 8, true);
   return output;
