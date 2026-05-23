@@ -67,6 +67,10 @@ export class WavetableAudio {
     this.node?.port.postMessage({ type: "trigger", position });
   }
 
+  setPositionHold(holding: boolean): void {
+    this.node?.port.postMessage({ type: "positionHold", holding });
+  }
+
   updateTables(tables: Float32Array[]): void {
     if (tables.length === 0) {
       return;

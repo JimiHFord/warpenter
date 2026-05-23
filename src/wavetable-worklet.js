@@ -29,6 +29,7 @@ class WaveTableProcessor extends AudioWorkletProcessor {
     this.lastPositionSent = -1;
     this.framesSincePositionUpdate = 0;
     this.ignorePositionFrames = 0;
+    this.positionHold = false;
     this.transportRunning = false;
     this.cycleModTimeout = 100;
     this.tableFadeSamples = Math.max(1, Math.floor(sampleRate * 0.025));
@@ -49,6 +50,10 @@ class WaveTableProcessor extends AudioWorkletProcessor {
         this.transportRunning = event.data.running;
       } else if (event.data.type === "trigger") {
         this.triggerFromPosition(event.data.position);
+      } else if (event.data.type === "positionHold") {
+        this.positionHold = Boolean(event.data.holding);
+        this.framesSincePositionUpdate = this.positionHold ? 0 : this.cycleModTimeout + 1;
+        this.ignorePositionFrames = this.positionHold ? this.ignorePositionFrames : 0;
       }
     };
   }
@@ -74,7 +79,12 @@ class WaveTableProcessor extends AudioWorkletProcessor {
     const volumeValues = parameters.volume ?? new Float32Array([-96]);
 
     const position = parameters.position?.[0] ?? 0;
-    if (this.ignorePositionFrames > 0) {
+    if (this.positionHold) {
+      this.cycleMod = this.numCycles > 0 ? position / this.numCycles : 0;
+      this.prevPosition = position;
+      this.framesSincePositionUpdate = 0;
+      this.syncCycleToMod();
+    } else if (this.ignorePositionFrames > 0) {
       this.prevPosition = position;
       this.ignorePositionFrames -= 1;
     } else if (Math.abs(this.prevPosition - position) > 0.0001) {

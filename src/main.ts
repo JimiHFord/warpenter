@@ -146,6 +146,7 @@ let waveTables: Float32Array[] = [];
 let plotUpdateRequested = true;
 let generateTimer: number | null = null;
 let storageTimer: number | null = null;
+let copyFeedbackTimer: number | null = null;
 let lastCommittedState: AppState | null = null;
 let undoStack: AppState[] = [];
 let redoStack: AppState[] = [];
@@ -158,6 +159,7 @@ let preferredMidiInputId = "";
 let presetsLoaded = false;
 let presetPage = 0;
 let presetEntries: PresetIndexEntry[] = [];
+let currentPlayingCycle: number | null = null;
 let activeKnobDrag:
   | {
       input: HTMLInputElement;
@@ -170,7 +172,9 @@ let activeKnobDrag:
 
 const audio = new WavetableAudio();
 audio.onCycle = (cycle) => {
+  currentPlayingCycle = cycle;
   updatePositionGhost(cycle);
+  requestPlotUpdate();
 };
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -246,7 +250,7 @@ function setupShell(): void {
       <p>
         Fork the
         <a href="https://github.com/JimiHFord/warpenter" target="_blank" rel="noreferrer">Warpenter repository</a>,
-        add one JSON file under <code>public/presets</code>, paste this preset into that file, commit it, and open a pull request.
+        add <code id="preset-file-path">public/presets/preset.json</code>, paste this preset into that file, commit it, and open a pull request.
         The preset name and blank description are starter values; please edit them before submitting.
       </p>
       <p>
@@ -254,13 +258,19 @@ function setupShell(): void {
       </p>
       <ol class="preset-steps">
         <li>Fork the repository on GitHub.</li>
-        <li>Create <code>public/presets/&lt;preset-id&gt;.json</code> in your fork.</li>
+        <li>Create <code id="preset-file-name">preset.json</code> in <code>public/presets</code> in your fork.</li>
         <li>Paste the copied JSON, edit the name and optional description, then commit.</li>
         <li>Open a pull request back to Warpenter.</li>
       </ol>
-      <p id="save-preset-status" class="muted-status" role="status"></p>
-      <p class="button-row">
-        <button id="copy-preset-json-button" type="button">Copy JSON</button>
+      <p class="button-row copy-feedback-row">
+        <button
+          id="copy-preset-json-button"
+          type="button"
+          class="icon-button action-icon copy-icon"
+          aria-label="Copy preset JSON"
+          title="Copy preset JSON"
+        ></button>
+        <span id="save-preset-status" class="muted-status" role="status"></span>
       </p>
       <details id="preset-json-details">
         <summary>Current preset JSON</summary>
@@ -2093,9 +2103,13 @@ function presetAssetUrl(path: string): string {
 
 async function openSavePresetDialog(): Promise<void> {
   const textarea = byId<HTMLTextAreaElement>("save-preset-json");
-  textarea.value = JSON.stringify(createPresetDraft(), null, 2);
+  const draft = createPresetDraft();
+  const fileName = `${draft.id}.json`;
+  textarea.value = JSON.stringify(draft, null, 2);
+  byId("preset-file-name").textContent = fileName;
+  byId("preset-file-path").textContent = `public/presets/${fileName}`;
   byId<HTMLDetailsElement>("preset-json-details").open = false;
-  byId("save-preset-status").textContent = "";
+  clearCopyFeedback();
   byId<HTMLDialogElement>("save-preset-dialog").showModal();
   await copyPresetJsonToClipboard();
 }
@@ -2135,20 +2149,40 @@ function createRandomPresetName(): string {
 }
 
 async function copyPresetJsonToClipboard(): Promise<void> {
-  const status = byId("save-preset-status");
   const textarea = byId<HTMLTextAreaElement>("save-preset-json");
   try {
     if (!navigator.clipboard) {
       throw new Error("Clipboard unavailable");
     }
     await navigator.clipboard.writeText(textarea.value);
-    status.textContent = "Copied preset JSON to clipboard.";
-    status.classList.remove("color-error");
-    status.classList.add("muted-status");
+    showCopyFeedback("Copied JSON to clipboard.", false);
   } catch {
-    status.textContent = "Clipboard copy was not available. Use the Copy JSON button or copy from the collapsed JSON section.";
-    status.classList.add("color-error");
-    status.classList.remove("muted-status");
+    showCopyFeedback("Clipboard copy unavailable. Open the JSON section and copy manually.", true);
+  }
+}
+
+function showCopyFeedback(message: string, isError: boolean): void {
+  const status = byId("save-preset-status");
+  if (copyFeedbackTimer !== null) {
+    window.clearTimeout(copyFeedbackTimer);
+  }
+  status.textContent = message;
+  status.classList.toggle("color-error", isError);
+  status.classList.toggle("muted-status", !isError);
+  copyFeedbackTimer = window.setTimeout(() => {
+    status.textContent = "";
+    copyFeedbackTimer = null;
+  }, 1600);
+}
+
+function clearCopyFeedback(): void {
+  if (copyFeedbackTimer !== null) {
+    window.clearTimeout(copyFeedbackTimer);
+    copyFeedbackTimer = null;
+  }
+  const status = document.getElementById("save-preset-status");
+  if (status) {
+    status.textContent = "";
   }
 }
 
@@ -2158,7 +2192,7 @@ function requestPlotUpdate(): void {
 
 function plotLoop(): void {
   if (plotUpdateRequested && waveTables.length > 0) {
-    const selected = Number(byId<HTMLInputElement>("audio-position").value);
+    const selected = currentVisualizerCycle();
 
     if (byId<HTMLDetailsElement>("details-3d").open) {
       plotTable3D(byId<HTMLCanvasElement>("waveform-3d-plot"), waveTables, selected);
@@ -2171,6 +2205,24 @@ function plotLoop(): void {
   }
 
   requestAnimationFrame(plotLoop);
+}
+
+function currentVisualizerCycle(): number {
+  if (isPositionDragActive()) {
+    return Number(byId<HTMLInputElement>("audio-position").value);
+  }
+  if (isAudioPlaying() && currentPlayingCycle !== null) {
+    return currentPlayingCycle;
+  }
+  return Number(byId<HTMLInputElement>("audio-position").value);
+}
+
+function isAudioPlaying(): boolean {
+  return previewRunning || heldMidiNotes.length > 0;
+}
+
+function isPositionDragActive(): boolean {
+  return activeKnobDrag?.input.id === "audio-position";
 }
 
 function installEventHandlers(): void {
@@ -2334,6 +2386,12 @@ function handleKnobPointerDown(event: PointerEvent): void {
     startValue: Number(input.value),
     shell,
   };
+  if (input.id === "audio-position" && isAudioPlaying()) {
+    audio.setPositionHold(true);
+    currentPlayingCycle = Number(input.value);
+    updatePositionGhost(currentPlayingCycle);
+    requestPlotUpdate();
+  }
   shell.classList.add("knob-dragging");
   shell.setPointerCapture(event.pointerId);
 }
@@ -2354,11 +2412,15 @@ function finishKnobPointerDrag(event: PointerEvent): void {
 
   event.preventDefault();
   const shell = activeKnobDrag.shell;
+  const wasPositionDrag = activeKnobDrag.input.id === "audio-position";
   if (shell.hasPointerCapture(event.pointerId)) {
     shell.releasePointerCapture(event.pointerId);
   }
   shell.classList.remove("knob-dragging");
   activeKnobDrag = null;
+  if (wasPositionDrag) {
+    audio.setPositionHold(false);
+  }
   commitUserStateChange();
 }
 
@@ -2377,6 +2439,10 @@ function updateKnobFromVerticalDrag(event: PointerEvent): void {
   updateAudioParameterFromInput(input);
   updateKnobVisual(input);
   if (input.id === "audio-position") {
+    if (isAudioPlaying()) {
+      currentPlayingCycle = Number(input.value);
+      updatePositionGhost(currentPlayingCycle);
+    }
     requestPlotUpdate();
   }
   schedulePersistState();
@@ -2465,6 +2531,7 @@ async function toggleAudioPreview(): Promise<void> {
     previewRunning = false;
     updateAudioPreviewButton();
     clearPositionGhost();
+    currentPlayingCycle = null;
     await syncPreviewTransport();
     return;
   }
@@ -2490,6 +2557,8 @@ async function syncPreviewTransport(): Promise<void> {
   }
 
   audio.setTransportRunning(false);
+  clearPositionGhost();
+  currentPlayingCycle = null;
   await audio.suspend();
 }
 

@@ -7,7 +7,9 @@ const mockTables = [new Float32Array([0, 0.5, -0.5, 0])];
 const audioInstances = vi.hoisted(() => [] as Array<{
   onCycle: ((cycle: number) => void) | null;
   updateParameter: ReturnType<typeof vi.fn>;
+  setPositionHold: ReturnType<typeof vi.fn>;
 }>);
+const plotCalls = vi.hoisted(() => [] as Array<{ kind: "2d" | "3d"; selected: number }>);
 let rafQueue: FrameRequestCallback[] = [];
 let documentListeners: Array<{
   type: string;
@@ -22,6 +24,7 @@ vi.mock("./audio", () => ({
     updateTables = vi.fn();
     updateParameter = vi.fn();
     updateLfoMode = vi.fn();
+    setPositionHold = vi.fn();
     resume = vi.fn(async () => undefined);
     suspend = vi.fn(async () => undefined);
     setTransportRunning = vi.fn();
@@ -34,8 +37,12 @@ vi.mock("./audio", () => ({
 }));
 
 vi.mock("./plot", () => ({
-  plotTable2D: vi.fn(),
-  plotTable3D: vi.fn(),
+  plotTable2D: vi.fn((_canvas: HTMLCanvasElement, _tables: Float32Array[], selected: number) => {
+    plotCalls.push({ kind: "2d", selected });
+  }),
+  plotTable3D: vi.fn((_canvas: HTMLCanvasElement, _tables: Float32Array[], selected: number) => {
+    plotCalls.push({ kind: "3d", selected });
+  }),
 }));
 
 vi.mock("./wasm-engine", () => ({
@@ -57,6 +64,10 @@ describe("Warpenter app", () => {
     window.localStorage.clear();
     window.history.replaceState({}, "", "/");
     audioInstances.length = 0;
+    plotCalls.length = 0;
+    HTMLElement.prototype.setPointerCapture ??= vi.fn();
+    HTMLElement.prototype.releasePointerCapture ??= vi.fn();
+    HTMLElement.prototype.hasPointerCapture ??= vi.fn(() => true);
     const css = (window.CSS ?? {}) as { escape?: (value: string) => string };
     css.escape ??= (value: string) => value.replace(/"/g, '\\"');
     window.CSS = css as typeof window.CSS;
@@ -74,6 +85,7 @@ describe("Warpenter app", () => {
         EventTarget.prototype.addEventListener.call(document, type, listener, options);
       },
     );
+    window.requestAnimationFrame ??= (() => 0);
     vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback: FrameRequestCallback) => {
       rafQueue.push(callback);
       return rafQueue.length;
@@ -86,6 +98,7 @@ describe("Warpenter app", () => {
     });
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("renders icon modal controls, a repository link, and nearest note names for frequency", async () => {
@@ -270,13 +283,22 @@ describe("Warpenter app", () => {
     const presetJson = (document.getElementById("save-preset-json") as HTMLTextAreaElement).value;
     expect(clipboardWrite).toHaveBeenCalledWith(presetJson);
     const parsedPreset = JSON.parse(presetJson) as { id: string; name: string; description?: string };
+    expect(saveDialog.textContent).toContain(`${parsedPreset.id}.json`);
     expect(parsedPreset.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(parsedPreset.name).toMatch(/^[A-Z][a-z]+ [A-Z][a-z]+$/);
     expect(parsedPreset.description).toBe("");
 
-    document.getElementById("copy-preset-json-button")?.click();
+    vi.useFakeTimers();
+    const copyButton = document.getElementById("copy-preset-json-button");
+    expect(copyButton?.classList.contains("copy-icon")).toBe(true);
+    expect(copyButton?.textContent?.trim()).toBe("");
+    copyButton?.click();
     await Promise.resolve();
     expect(clipboardWrite).toHaveBeenCalledTimes(2);
+    expect(document.getElementById("save-preset-status")?.textContent).toContain("Copied");
+
+    vi.advanceTimersByTime(1800);
+    expect(document.getElementById("save-preset-status")?.textContent).toBe("");
   });
 
   it("keeps the selected position stable while showing LFO playback as a ghost indicator", async () => {
@@ -305,6 +327,37 @@ describe("Warpenter app", () => {
     expect((document.getElementById("audio-lfo-output") as HTMLOutputElement).value).toBe("0%");
     expect(audio?.updateParameter).toHaveBeenCalledWith("lfo", 0);
   });
+
+  it("uses the current playing cycle for visualizers and position ghost while audio is running", async () => {
+    await bootApp();
+    plotCalls.length = 0;
+    const audio = audioInstances.at(-1);
+    const position = document.getElementById("audio-position") as HTMLInputElement;
+    position.max = "127";
+    position.value = "12";
+
+    document.getElementById("audio-preview-toggle")?.click();
+    await Promise.resolve();
+    audio?.onCycle?.(47);
+    flushAnimationFrames(2);
+
+    expect(position.value).toBe("12");
+    expect(plotCalls.some((call) => call.selected === 47)).toBe(true);
+  });
+
+  it("holds position LFO while dragging the playing position and releases it on pointer up", async () => {
+    await bootApp();
+    const audio = audioInstances.at(-1);
+    document.getElementById("audio-preview-toggle")?.click();
+    await Promise.resolve();
+
+    const shell = document.querySelector<HTMLElement>('[data-knob-for="audio-position"] .knob-shell');
+    shell?.dispatchEvent(pointerEvent("pointerdown", { pointerId: 7, clientY: 100 }));
+    expect(audio?.setPositionHold).toHaveBeenCalledWith(true);
+
+    window.dispatchEvent(pointerEvent("pointerup", { pointerId: 7, clientY: 100 }));
+    expect(audio?.setPositionHold).toHaveBeenCalledWith(false);
+  });
 });
 
 async function bootApp(): Promise<void> {
@@ -326,6 +379,16 @@ function flushAnimationFrames(limit: number): void {
 
 function pressKey(code: string, key: string): void {
   document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, code, key }));
+}
+
+function pointerEvent(type: string, values: { pointerId: number; clientY: number }): Event {
+  const event = new Event(type, { bubbles: true });
+  Object.defineProperties(event, {
+    pointerId: { value: values.pointerId },
+    clientY: { value: values.clientY },
+    preventDefault: { value: vi.fn() },
+  });
+  return event;
 }
 
 function generatorBodies(): HTMLTableSectionElement[] {

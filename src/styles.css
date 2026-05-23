@@ -51,25 +51,25 @@
 
 :root[data-theme="virtual-riot"] {
   color-scheme: dark;
-  --bg: #050509;
-  --panel: #10101a;
-  --panel-2: #171827;
-  --input-bg: #070713;
-  --canvas-bg: #030308;
-  --text: #f7fbff;
-  --muted: #b5c1d6;
-  --line: #31415f;
+  --bg: #071006;
+  --panel: #0e1a0d;
+  --panel-2: #142614;
+  --input-bg: #061006;
+  --canvas-bg: #030803;
+  --text: #f4fff1;
+  --muted: #b8ccb2;
+  --line: #33552f;
   --accent: #ff2bd6;
   --accent-strong: #1fffea;
   --accent-border: rgb(255 43 214 / 0.78);
   --accent-subtle: rgb(31 255 234 / 0.18);
-  --accent-faint: rgb(255 43 214 / 0.54);
-  --button-bg: #1c1028;
-  --button-hover: #25173a;
-  --invalid-bg: #311224;
-  --body-top: rgb(14 12 26 / 0.92);
-  --body-bottom: rgb(3 3 8 / 0.98);
-  --green: #9dff7a;
+  --accent-faint: rgb(255 43 214 / 0.48);
+  --button-bg: #14220d;
+  --button-hover: #1c3212;
+  --invalid-bg: #29151f;
+  --body-top: rgb(10 24 8 / 0.92);
+  --body-bottom: rgb(3 8 3 / 0.98);
+  --green: #b6ff37;
   --blue: #1fffea;
   --error: #ff79a8;
 }
@@ -724,6 +724,10 @@ th {
 
 .import-icon {
   --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/%3E%3Cpath d='m17 8-5-5-5 5'/%3E%3Cpath d='M12 3v12'/%3E%3C/svg%3E");
+}
+
+.copy-icon {
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='9' width='13' height='13' rx='2' ry='2'/%3E%3Cpath d='M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'/%3E%3C/svg%3E");
 }
 
 .save-icon {
