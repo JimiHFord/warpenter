@@ -7,6 +7,8 @@ Lambda Synthetics browser project.
 
 [Open the deployed app](https://jimihford.github.io/warpenter/).
 
+![Warpenter using the neon purple theme](docs/warpenter-neon-purple.png)
+
 The app renders a generator/effects table, drives a locally built WASM engine,
 previews the resulting tables with an AudioWorklet, plots 2D/3D canvases, and
 exports WAV or raw WT data.
