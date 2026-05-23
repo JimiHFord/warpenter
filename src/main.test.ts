@@ -254,6 +254,58 @@ describe("Warpenter app", () => {
     );
   });
 
+  it("defaults the position LFO to 32% only when no persisted state exists", async () => {
+    await bootApp();
+
+    expect((document.getElementById("audio-lfo") as HTMLInputElement).value).toBe("32");
+    expect((document.getElementById("audio-lfo-output") as HTMLOutputElement).value).toBe("32%");
+  });
+
+  it("keeps a persisted position LFO instead of applying the first-load default", async () => {
+    window.localStorage.setItem(
+      "warpenter-state-v1",
+      JSON.stringify({
+        version: 1,
+        designer: {
+          settings: {
+            tableSizeBits: 11,
+            tableSize: 2048,
+            cycles: 128,
+            fixNonZero: true,
+            normalize: 2,
+            removeDuplicates: true,
+          },
+          units: [],
+        },
+        audio: {
+          volume: -36,
+          frequency: 6.0313,
+          lfo: 0,
+          lfoMode: "wrap",
+          position: 0,
+          midiEnabled: false,
+          midiInputId: "",
+        },
+        ui: {
+          theme: "neon-purple",
+          autoGenerate: true,
+          fileName: "saved-wavetable",
+          fileBits: 4,
+          fileFormat: "wav",
+          addClmChunk: false,
+          addCycleLength: true,
+          collapsedUnits: [],
+          randomizationLocks: { units: [], rows: [], fields: [] },
+        },
+      }),
+    );
+
+    await bootApp();
+
+    expect((document.getElementById("audio-lfo") as HTMLInputElement).value).toBe("0");
+    expect((document.getElementById("audio-lfo-output") as HTMLOutputElement).value).toBe("0%");
+  });
+
   it("lazy-loads presets, makes preset loading undoable, and opens save instructions", async () => {
     const presetState = {
       settings: {

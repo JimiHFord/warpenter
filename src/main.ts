@@ -135,7 +135,7 @@ const PRESET_NOUNS = [
 const DEFAULT_AUDIO_STATE: AudioUiState = {
   volume: -36,
   frequency: 6.0313,
-  lfo: 0,
+  lfo: 32,
   lfoMode: "wrap",
   position: 0,
   midiEnabled: false,
@@ -486,7 +486,7 @@ function setupShell(): void {
                     <span>Position LFO</span>
                     <span class="knob-shell">
                       <span class="knob-face" aria-hidden="true"><span class="knob-pointer"></span></span>
-                      <input class="knob-input" type="range" id="audio-lfo" value="0" min="-100" max="100" list="LFO-markers">
+                      <input class="knob-input" type="range" id="audio-lfo" value="32" min="-100" max="100" list="LFO-markers">
                     </span>
                     <output id="audio-lfo-output" for="audio-lfo"></output>
                   </label>
