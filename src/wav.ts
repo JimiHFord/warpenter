@@ -11,7 +11,7 @@ export interface ExportOptions {
 
 const DEFAULT_SAMPLE_RATE = 44100;
 const WAVETABLE_DESIGNER_STATE_CHUNK = "wtds";
-const WAVETABLE_CREATOR_INFO = "Created by Warpenter - https://github.com/JimiHFord/warpenter";
+const WAVETABLE_CREATOR_INFO = "Created with Warpenter - https://github.com/JimiHFord/warpenter";
 
 function clampSample(sample: number): number {
   if (!Number.isFinite(sample)) {

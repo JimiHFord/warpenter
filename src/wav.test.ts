@@ -55,7 +55,7 @@ describe("WAV metadata", () => {
 
     expect(extractWavetableStateMetadata(output)).toBe("encoded-state");
     expect(findInfoSubchunk(output, "ISFT")).toBe(
-      "Created by Warpenter - https://github.com/JimiHFord/warpenter",
+      "Created with Warpenter - https://github.com/JimiHFord/warpenter",
     );
     expect(new DataView(output).getUint32(4, true)).toBe(output.byteLength - 8);
   });
