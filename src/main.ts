@@ -60,7 +60,6 @@ interface AudioUiState {
 interface UiState {
   theme: ThemeId;
   autoGenerate: boolean;
-  fileName: string;
   fileBits: ExportEncoding;
   fileFormat: ExportFormat;
   addClmChunk: boolean;
@@ -712,7 +711,6 @@ function normalizeAppState(parsed: unknown): AppState | null {
     ui: {
       theme: isThemeId(ui.theme) ? ui.theme : DEFAULT_THEME_ID,
       autoGenerate: true,
-      fileName: String(ui.fileName ?? DEFAULT_EXPORT_FILE_NAME),
       fileBits: bits as ExportEncoding,
       fileFormat: format,
       addClmChunk: Boolean(ui.addClmChunk),
@@ -833,7 +831,6 @@ function readUiState(): UiState {
   return {
     theme: isThemeId(theme) ? theme : DEFAULT_THEME_ID,
     autoGenerate: true,
-    fileName: byId<HTMLInputElement>("file-name").value,
     fileBits: Number(byId<HTMLSelectElement>("file-bits").value) as ExportEncoding,
     fileFormat: byId<HTMLSelectElement>("file-format").value as ExportFormat,
     addClmChunk: byId<HTMLInputElement>("file-clm").checked,
@@ -901,7 +898,6 @@ function applyAudioState(state: AudioUiState): void {
 function applyUiState(state: UiState): void {
   byId<HTMLSelectElement>("theme-select").value = state.theme;
   applyTheme(state.theme);
-  byId<HTMLInputElement>("file-name").value = state.fileName;
   byId<HTMLSelectElement>("file-bits").value = String(state.fileBits);
   byId<HTMLSelectElement>("file-format").value = state.fileFormat;
   byId<HTMLInputElement>("file-clm").checked = state.addClmChunk;

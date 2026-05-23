@@ -60,6 +60,7 @@ vi.mock("./wav", () => ({
 describe("Warpenter app", () => {
   beforeEach(() => {
     vi.resetModules();
+    clearBrowserTimers();
     document.body.innerHTML = '<div id="app"></div>';
     window.localStorage.clear();
     window.history.replaceState({}, "", "/");
@@ -93,6 +94,7 @@ describe("Warpenter app", () => {
   });
 
   afterEach(() => {
+    clearBrowserTimers();
     documentListeners.forEach(({ type, listener, options }) => {
       document.removeEventListener(type, listener, options);
     });
@@ -254,6 +256,16 @@ describe("Warpenter app", () => {
     );
   });
 
+  it("ignores persisted export names and keeps the field on its timestamped default", async () => {
+    window.localStorage.setItem("warpenter-state-v1", JSON.stringify(appStateFixture({ fileName: "wavetable" })));
+
+    await bootApp();
+
+    expect((document.getElementById("file-name") as HTMLInputElement).value).toMatch(
+      /^warpenter-wt-\d{8}-\d{4}$/,
+    );
+  });
+
   it("defaults the position LFO to 32% only when no persisted state exists", async () => {
     await bootApp();
 
@@ -264,46 +276,41 @@ describe("Warpenter app", () => {
   it("keeps a persisted position LFO instead of applying the first-load default", async () => {
     window.localStorage.setItem(
       "warpenter-state-v1",
-      JSON.stringify({
-        version: 1,
-        designer: {
-          settings: {
-            tableSizeBits: 11,
-            tableSize: 2048,
-            cycles: 128,
-            fixNonZero: true,
-            normalize: 2,
-            removeDuplicates: true,
-          },
-          units: [],
-        },
-        audio: {
-          volume: -36,
-          frequency: 6.0313,
-          lfo: 0,
-          lfoMode: "wrap",
-          position: 0,
-          midiEnabled: false,
-          midiInputId: "",
-        },
-        ui: {
-          theme: "neon-purple",
-          autoGenerate: true,
+      JSON.stringify(
+        appStateFixture({
           fileName: "saved-wavetable",
-          fileBits: 4,
-          fileFormat: "wav",
-          addClmChunk: false,
-          addCycleLength: true,
-          collapsedUnits: [],
-          randomizationLocks: { units: [], rows: [], fields: [] },
-        },
-      }),
+          lfo: 0,
+        }),
+      ),
     );
 
     await bootApp();
 
     expect((document.getElementById("audio-lfo") as HTMLInputElement).value).toBe("0");
     expect((document.getElementById("audio-lfo-output") as HTMLOutputElement).value).toBe("0%");
+  });
+
+  it("does not track export name edits in undo history or persisted app state", async () => {
+    vi.useFakeTimers();
+    window.localStorage.setItem(
+      "warpenter-state-v1",
+      JSON.stringify(appStateFixture({ fileName: "my-custom-wavetable" })),
+    );
+
+    await bootApp();
+
+    const fileName = document.getElementById("file-name") as HTMLInputElement;
+    expect(fileName.value).toMatch(/^warpenter-wt-\d{8}-\d{4}$/);
+
+    fileName.value = "scratch-export-name";
+    fileName.dispatchEvent(new Event("change", { bubbles: true }));
+    expect((document.getElementById("undo-button") as HTMLButtonElement).disabled).toBe(true);
+
+    vi.advanceTimersByTime(400);
+    const persisted = JSON.parse(window.localStorage.getItem("warpenter-state-v1") ?? "{}") as {
+      ui?: { fileName?: string };
+    };
+    expect(persisted.ui?.fileName).toBeUndefined();
   });
 
   it("lazy-loads presets, makes preset loading undoable, and opens save instructions", async () => {
@@ -458,6 +465,50 @@ describe("Warpenter app", () => {
     expect(audio?.setPositionHold).toHaveBeenCalledWith(false);
   });
 });
+
+function appStateFixture(overrides: { fileName?: string; lfo?: number } = {}): unknown {
+  return {
+    version: 1,
+    designer: {
+      settings: {
+        tableSizeBits: 11,
+        tableSize: 2048,
+        cycles: 128,
+        fixNonZero: true,
+        normalize: 2,
+        removeDuplicates: true,
+      },
+      units: [],
+    },
+    audio: {
+      volume: -36,
+      frequency: 6.0313,
+      lfo: overrides.lfo ?? 32,
+      lfoMode: "wrap",
+      position: 0,
+      midiEnabled: false,
+      midiInputId: "",
+    },
+    ui: {
+      theme: "neon-purple",
+      autoGenerate: true,
+      fileName: overrides.fileName ?? "saved-wavetable",
+      fileBits: 4,
+      fileFormat: "wav",
+      addClmChunk: false,
+      addCycleLength: true,
+      collapsedUnits: [],
+      randomizationLocks: { units: [], rows: [], fields: [] },
+    },
+  };
+}
+
+function clearBrowserTimers(): void {
+  for (let timerId = 1; timerId < 10000; timerId += 1) {
+    window.clearTimeout(timerId);
+    window.clearInterval(timerId);
+  }
+}
 
 async function bootApp(): Promise<void> {
   await import("./main");
