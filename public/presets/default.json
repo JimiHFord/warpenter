@@ -1,6 +1,6 @@
 {
-  "id": "screenshot-resonant-clip-ring",
-  "name": "Resonant Clip Ring",
+  "id": "default",
+  "name": "Default",
   "description": "The resonant sine, hard clip, and ring-mod patch used as the current default.",
   "author": {
     "name": "Jimi Ford",
@@ -74,6 +74,14 @@
         "parameters": {
           "gain": { "start": 0, "end": 0, "curve": 0, "round": false },
           "bias": { "start": 0, "end": 0, "curve": 0, "round": false }
+        }
+      },
+      {
+        "name": "bit crush",
+        "kind": "effects",
+        "enabled": false,
+        "parameters": {
+          "bits": { "start": 32, "end": 32, "curve": 0, "round": false }
         }
       },
       {

@@ -10,7 +10,6 @@ import {
   type ParameterValue,
   type UnitDefinition,
 } from "./generators";
-import { getConfiguredDefaultPatch, patches, type DesignerPatch } from "./patches";
 import { plotTable2D, plotTable3D } from "./plot";
 import type { DesignerState, MorphedParameter, NormalizeMode, UnitState } from "./synth";
 import {
@@ -100,6 +99,7 @@ interface PresetDocument {
 const configuredDefaultTheme = import.meta.env.VITE_DEFAULT_THEME?.trim();
 const DEFAULT_THEME_ID: ThemeId = isThemeId(configuredDefaultTheme) ? configuredDefaultTheme : "neon-purple";
 const DEFAULT_EXPORT_FILE_NAME = createDefaultFileName();
+const DEFAULT_PRESET_FILE = "default.json";
 const STORAGE_KEY = "warpenter-state-v1";
 const STORAGE_WRITE_DELAY_MS = 350;
 const MAX_HISTORY_STATES = 100;
@@ -132,7 +132,7 @@ const PRESET_NOUNS = [
 ] as const;
 
 const DEFAULT_AUDIO_STATE: AudioUiState = {
-  volume: -36,
+  volume: -12,
   frequency: 6.0313,
   lfo: 32,
   lfoMode: "wrap",
@@ -469,7 +469,7 @@ function setupShell(): void {
                     <span>Volume</span>
                     <span class="knob-shell">
                       <span class="knob-face" aria-hidden="true"><span class="knob-pointer"></span></span>
-                      <input class="knob-input" type="range" id="audio-volume" value="-36" min="-96" max="0">
+                      <input class="knob-input" type="range" id="audio-volume" min="-96" max="0" value="-12">
                     </span>
                     <output id="audio-volume-output" for="audio-volume"></output>
                   </label>
@@ -576,16 +576,16 @@ function appendGeneratorOptions(): void {
   unitOptions.append(sourceGroup, effectGroup);
 }
 
-function appendInitialUnits(patch: DesignerPatch | null): void {
+function appendInitialUnits(state: DesignerState | null): void {
   const unitList = byId<HTMLTableElement>("unit-list");
   const settingsBody = createUnitBody(settingsDefinition, true);
   unitList.appendChild(settingsBody);
-  if (patch) {
-    applyPatchSettings(settingsBody, patch.state);
+  if (state) {
+    applyPatchSettings(settingsBody, state);
   }
 
   const definitions = [...sourceDefinitions, ...effectDefinitions];
-  const patchedUnits = patch?.state.units ?? [];
+  const patchedUnits = state?.units ?? [];
   const appended = new Set<string>();
 
   for (const unit of patchedUnits) {
@@ -602,15 +602,6 @@ function appendInitialUnits(patch: DesignerPatch | null): void {
     }
     unitList.appendChild(createUnitBody(definition, definition.enabled === true));
   }
-}
-
-function getStartupPatch(): DesignerPatch | null {
-  const requested = new URLSearchParams(window.location.search).get("patch");
-  if (requested && requested in patches) {
-    return patches[requested as keyof typeof patches] ?? null;
-  }
-
-  return getConfiguredDefaultPatch();
 }
 
 function setControlValue(control: HTMLInputElement | HTMLSelectElement, value: ParameterValue): void {
@@ -756,6 +747,25 @@ function loadSharedState(params = new URLSearchParams(window.location.search)): 
   }
 
   return decodeEncodedAppState(encoded, "shared");
+}
+
+async function loadDefaultPresetState(): Promise<DesignerState | null> {
+  try {
+    const response = await fetch(presetAssetUrl(DEFAULT_PRESET_FILE));
+    if (!response.ok) {
+      throw new Error(`Default preset returned ${response.status}`);
+    }
+
+    const preset = (await response.json()) as PresetDocument;
+    if (preset.id !== "default" || !isObject(preset.state)) {
+      throw new Error("Default preset is malformed.");
+    }
+
+    return preset.state;
+  } catch (error) {
+    console.warn("Unable to load default preset.", error);
+    return null;
+  }
 }
 
 function clearSharedStateParam(): void {
@@ -2914,28 +2924,36 @@ function handleKeyboardPreview(event: KeyboardEvent): void {
   schedulePersistState();
 }
 
-setupShell();
-applyTheme(DEFAULT_THEME_ID);
-appendGeneratorOptions();
-const startupParams = new URLSearchParams(window.location.search);
-const sharedState = loadSharedState(startupParams);
-const persistedState = sharedState ? null : loadPersistedState();
-const startupPatch = sharedState || persistedState ? null : getStartupPatch();
-appendInitialUnits(startupPatch);
-byId<HTMLSelectElement>("theme-select").value = DEFAULT_THEME_ID;
-if (sharedState) {
-  applyAppState(sharedState);
-  clearSharedStateParam();
-} else if (persistedState) {
-  applyAppState(persistedState);
-} else {
-  updateAllKnobs();
+async function bootstrap(): Promise<void> {
+  setupShell();
+  applyTheme(DEFAULT_THEME_ID);
+  appendGeneratorOptions();
+  const startupParams = new URLSearchParams(window.location.search);
+  const sharedState = loadSharedState(startupParams);
+  const persistedState = sharedState ? null : loadPersistedState();
+  const defaultPresetState = sharedState || persistedState ? null : await loadDefaultPresetState();
+  appendInitialUnits(defaultPresetState);
+  byId<HTMLSelectElement>("theme-select").value = DEFAULT_THEME_ID;
+  if (sharedState) {
+    applyAppState(sharedState);
+    clearSharedStateParam();
+  } else if (persistedState) {
+    applyAppState(persistedState);
+  } else {
+    updateAllKnobs();
+  }
+  initDropEvents();
+  installEventHandlers();
+  initializeStateTracking();
+  if (byId<HTMLInputElement>("midi-enabled").checked) {
+    void setMidiEnabled(true);
+  }
+  void generate();
+  requestAnimationFrame(plotLoop);
 }
-initDropEvents();
-installEventHandlers();
-initializeStateTracking();
-if (byId<HTMLInputElement>("midi-enabled").checked) {
-  void setMidiEnabled(true);
-}
-void generate();
-requestAnimationFrame(plotLoop);
+
+const warpenterReady = bootstrap();
+(window as Window & { __warpenterReady?: Promise<void> }).__warpenterReady = warpenterReady;
+void warpenterReady.catch((error) => {
+  console.error("Unable to start Warpenter.", error);
+});

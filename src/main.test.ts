@@ -60,10 +60,13 @@ vi.mock("./wav", () => ({
 describe("Warpenter app", () => {
   beforeEach(() => {
     vi.resetModules();
+    vi.useFakeTimers();
     clearBrowserTimers();
     document.body.innerHTML = '<div id="app"></div>';
     window.localStorage.clear();
     window.history.replaceState({}, "", "/");
+    delete (window as Window & { __warpenterReady?: Promise<void> }).__warpenterReady;
+    vi.stubGlobal("fetch", vi.fn(defaultPresetFetch));
     audioInstances.length = 0;
     plotCalls.length = 0;
     HTMLElement.prototype.setPointerCapture ??= vi.fn();
@@ -94,6 +97,7 @@ describe("Warpenter app", () => {
   });
 
   afterEach(() => {
+    vi.clearAllTimers();
     clearBrowserTimers();
     documentListeners.forEach(({ type, listener, options }) => {
       document.removeEventListener(type, listener, options);
@@ -256,6 +260,18 @@ describe("Warpenter app", () => {
     );
   });
 
+  it("loads the default preset and -12 dB preview volume on first load", async () => {
+    await bootApp();
+
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("presets/default.json"));
+    expect(generatorBodies()[1]?.dataset.unitName).toBe("resonant sine");
+    expect(generatorBodies()[1]?.querySelector<HTMLInputElement>(".unit-enabled")?.checked).toBe(true);
+    expect(parameterEndValue("overtone ratio")).toBe("18");
+    expect(parameterStartValue("overtone shape")).toBe("63");
+    expect((document.getElementById("audio-volume") as HTMLInputElement).value).toBe("-12");
+    expect((document.getElementById("audio-volume-output") as HTMLOutputElement).value).toBe("-12 dB");
+  });
+
   it("ignores persisted export names and keeps the field on its timestamped default", async () => {
     window.localStorage.setItem("warpenter-state-v1", JSON.stringify(appStateFixture({ fileName: "wavetable" })));
 
@@ -274,6 +290,8 @@ describe("Warpenter app", () => {
   });
 
   it("keeps a persisted position LFO instead of applying the first-load default", async () => {
+    const persistedFetchMock = vi.fn(defaultPresetFetch);
+    vi.stubGlobal("fetch", persistedFetchMock);
     window.localStorage.setItem(
       "warpenter-state-v1",
       JSON.stringify(
@@ -286,8 +304,30 @@ describe("Warpenter app", () => {
 
     await bootApp();
 
+    expect(persistedFetchMock).not.toHaveBeenCalled();
     expect((document.getElementById("audio-lfo") as HTMLInputElement).value).toBe("0");
     expect((document.getElementById("audio-lfo-output") as HTMLOutputElement).value).toBe("0%");
+  });
+
+  it("keeps a persisted preview volume instead of applying the first-load default", async () => {
+    window.localStorage.setItem("warpenter-state-v1", JSON.stringify(appStateFixture({ volume: -36 })));
+
+    await bootApp();
+
+    expect((document.getElementById("audio-volume") as HTMLInputElement).value).toBe("-36");
+    expect((document.getElementById("audio-volume-output") as HTMLOutputElement).value).toBe("-36 dB");
+  });
+
+  it("falls back to the default preset when persisted state is corrupt", async () => {
+    const corruptedFetchMock = vi.fn(defaultPresetFetch);
+    vi.stubGlobal("fetch", corruptedFetchMock);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    window.localStorage.setItem("warpenter-state-v1", "{not-valid-json");
+
+    await bootApp();
+
+    expect(corruptedFetchMock).toHaveBeenCalledWith(expect.stringContaining("presets/default.json"));
+    expect(parameterEndValue("overtone ratio")).toBe("18");
   });
 
   it("does not track export name edits in undo history or persisted app state", async () => {
@@ -339,6 +379,9 @@ describe("Warpenter app", () => {
     };
     const fetchMock = vi.fn(async (url: string | URL | Request) => {
       const requestUrl = String(url);
+      if (requestUrl.includes("presets/default.json")) {
+        return new Response(JSON.stringify(defaultPresetDocument()));
+      }
       if (requestUrl.includes("presets/index.json")) {
         return new Response(
           JSON.stringify({
@@ -354,8 +397,9 @@ describe("Warpenter app", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await bootApp();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("presets/default.json"));
     const originalValue = parameterStartValue("modulator ratio");
+    fetchMock.mockClear();
 
     document.getElementById("presets-tab")?.click();
     await waitFor(() => document.querySelector<HTMLButtonElement>(".preset-load"));
@@ -466,7 +510,74 @@ describe("Warpenter app", () => {
   });
 });
 
-function appStateFixture(overrides: { fileName?: string; lfo?: number } = {}): unknown {
+async function defaultPresetFetch(url: string | URL | Request): Promise<Response> {
+  const requestUrl = String(url);
+  if (requestUrl.includes("presets/default.json")) {
+    return new Response(JSON.stringify(defaultPresetDocument()));
+  }
+  throw new Error(`Unexpected fetch: ${requestUrl}`);
+}
+
+function defaultPresetDocument(): unknown {
+  return {
+    id: "default",
+    name: "Default",
+    description: "The resonant sine, hard clip, and ring-mod patch used as the current default.",
+    state: {
+      settings: {
+        tableSizeBits: 11,
+        tableSize: 2048,
+        cycles: 128,
+        fixNonZero: true,
+        normalize: 2,
+        removeDuplicates: true,
+      },
+      units: [
+        {
+          name: "sinewave FM",
+          kind: "sources",
+          enabled: false,
+          parameters: {
+            "modulator ratio": { start: 1, end: 1, curve: 0, round: false },
+            "modulator volume": { start: -12, end: -12, curve: 0, round: false },
+            "carrier ratio": { start: 1, end: 1, curve: 0, round: false },
+            "carrier volume": { start: 0, end: 0, curve: 0, round: false },
+          },
+        },
+        {
+          name: "resonant sine",
+          kind: "sources",
+          enabled: true,
+          parameters: {
+            "overtone ratio": { start: 1, end: 18, curve: 12, round: false },
+            "overtone shape": { start: 63, end: 0, curve: 0, round: false },
+            volume: { start: 0, end: 0, curve: 0, round: false },
+          },
+        },
+        {
+          name: "hard clip",
+          kind: "effects",
+          enabled: true,
+          parameters: {
+            gain: { start: 23, end: 0, curve: 0, round: false },
+            bias: { start: 98, end: -49, curve: 0, round: false },
+          },
+        },
+        {
+          name: "ring mod",
+          kind: "effects",
+          enabled: true,
+          parameters: {
+            ratio: { start: 31, end: 17, curve: 0, round: false },
+            "carrier gain": { start: 0, end: 0, curve: 0, round: false },
+          },
+        },
+      ],
+    },
+  };
+}
+
+function appStateFixture(overrides: { fileName?: string; lfo?: number; volume?: number } = {}): unknown {
   return {
     version: 1,
     designer: {
@@ -481,7 +592,7 @@ function appStateFixture(overrides: { fileName?: string; lfo?: number } = {}): u
       units: [],
     },
     audio: {
-      volume: -36,
+      volume: overrides.volume ?? -12,
       frequency: 6.0313,
       lfo: overrides.lfo ?? 32,
       lfoMode: "wrap",
@@ -512,6 +623,7 @@ function clearBrowserTimers(): void {
 
 async function bootApp(): Promise<void> {
   await import("./main");
+  await (window as Window & { __warpenterReady?: Promise<void> }).__warpenterReady;
   await Promise.resolve();
   flushAnimationFrames(4);
   await Promise.resolve();
@@ -548,9 +660,17 @@ function generatorBodies(): HTMLTableSectionElement[] {
 }
 
 function parameterStartValue(parameterName: string): string {
+  return parameterFieldValue(parameterName, ".linear-start");
+}
+
+function parameterEndValue(parameterName: string): string {
+  return parameterFieldValue(parameterName, ".linear-end");
+}
+
+function parameterFieldValue(parameterName: string, selector: string): string {
   return (
     document.querySelector<HTMLInputElement>(
-      `tr[data-parameter-name="${window.CSS.escape(parameterName)}"] .linear-start`,
+      `tr[data-parameter-name="${window.CSS.escape(parameterName)}"] ${selector}`,
     )?.value ?? ""
   );
 }

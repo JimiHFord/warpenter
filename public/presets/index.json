@@ -1,11 +1,11 @@
 {
   "presets": [
     {
-      "id": "screenshot-resonant-clip-ring",
-      "name": "Resonant Clip Ring",
-      "path": "screenshot-resonant-clip-ring.json",
+      "id": "default",
+      "name": "Default",
+      "path": "default.json",
       "description": "The resonant sine, hard clip, and ring-mod patch used as the current default.",
-      "modified": "2026-05-23T13:55:04-04:00",
+      "modified": "2026-05-23T21:14:29.928Z",
       "author": "Jimi Ford",
       "authorUrl": "https://github.com/JimiHFord"
     }

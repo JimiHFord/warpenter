@@ -60,7 +60,7 @@ class WaveTableProcessor extends AudioWorkletProcessor {
 
   static get parameterDescriptors() {
     return [
-      { name: "volume", defaultValue: -36, minValue: -96, maxValue: 0 },
+      { name: "volume", defaultValue: -12, minValue: -96, maxValue: 0 },
       { name: "frequency", defaultValue: 6 },
       { name: "position", defaultValue: 0, minValue: 0, maxValue: 1 },
       { name: "lfo", defaultValue: 0 },
