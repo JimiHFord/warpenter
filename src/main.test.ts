@@ -136,7 +136,11 @@ describe("Warpenter app", () => {
     const row = unit?.querySelector<HTMLTableRowElement>(".unit-parameter");
     expect(row?.querySelector(".parameter-editor-row")).not.toBeNull();
     expect(row?.querySelector(".field-editor .field-lock")).not.toBeNull();
-    const fieldLabels = Array.from(row?.querySelectorAll(".field-label") ?? []).map((label) => label.textContent);
+    expect(unit?.querySelectorAll(".unit-field-label-row").length).toBe(1);
+    expect(row?.querySelector(".field-label")).toBeNull();
+    const fieldLabels = Array.from(unit?.querySelectorAll(".unit-field-label-row .field-column-label") ?? []).map(
+      (label) => label.textContent,
+    );
     expect(fieldLabels).toEqual(["Start", "End", "Curve", "Round"]);
   });
 

@@ -698,6 +698,11 @@ th {
   outline-offset: 1px;
 }
 
+.linear-round.field-selected {
+  border-radius: 0.22rem;
+  outline-offset: 0.12rem;
+}
+
 .icon-button {
   position: relative;
   display: inline-grid;
@@ -838,6 +843,27 @@ th {
   grid-template-columns: minmax(7.5rem, 1.2fr) minmax(8rem, 3.6fr);
 }
 
+.unit-field-label-row td {
+  padding-top: 0.3rem;
+  padding-bottom: 0;
+}
+
+.field-column-labels {
+  align-items: center;
+}
+
+.parameter-label-heading {
+  min-width: 0;
+}
+
+.field-column-label {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
 .parameter-label-group {
   display: flex;
   min-width: 0;
@@ -862,26 +888,15 @@ th {
 }
 
 .field-editor.has-field-lock {
-  grid-template-areas:
-    "label lock"
-    "control lock";
+  grid-template-areas: "control lock";
   grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
 }
 
 .field-editor:not(.has-field-lock) {
-  grid-template-areas:
-    "label"
-    "control";
+  grid-template-areas: "control";
   grid-template-columns: minmax(0, 1fr);
-}
-
-.field-label {
-  grid-area: label;
-  color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 700;
-  line-height: 1;
-  text-transform: uppercase;
+  align-items: center;
 }
 
 .field-cell .linear-input {
@@ -894,9 +909,15 @@ th {
   width: auto;
 }
 
+.field-cell .linear-input[type="checkbox"] {
+  width: auto;
+  min-width: 0;
+  justify-self: start;
+}
+
 .field-cell .field-lock {
   grid-area: lock;
-  align-self: end;
+  align-self: center;
 }
 
 .unit-delete::before,
@@ -949,11 +970,13 @@ tbody:has(input.unit-enabled:not(:checked)) {
   opacity: 0.48;
 }
 
-tbody:has(input.unit-enabled:not(:checked)) tr.unit-parameter {
+tbody:has(input.unit-enabled:not(:checked)) tr.unit-parameter,
+tbody:has(input.unit-enabled:not(:checked)) tr.unit-field-label-row {
   visibility: collapse;
 }
 
-.unit-collapsed tr.unit-parameter {
+.unit-collapsed tr.unit-parameter,
+.unit-collapsed tr.unit-field-label-row {
   visibility: collapse;
 }
 
@@ -1178,6 +1201,10 @@ summary {
 
   .settings-editor-row {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .unit-field-label-row .parameter-label-heading {
+    display: none;
   }
 
   .parameter-label-group {

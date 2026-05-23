@@ -1442,6 +1442,10 @@ function createUnitBody(definition: UnitDefinition, enabled: boolean): HTMLTable
     deleteCell.appendChild(button);
   }
 
+  if (definition.kind !== "settings") {
+    tbody.appendChild(createFieldLabelRow());
+  }
+
   for (const [parameterName, spec] of Object.entries(definition.parameters)) {
     tbody.appendChild(createParameterRow(definition.kind, parameterName, spec));
   }
@@ -1456,6 +1460,34 @@ function createUnitBody(definition: UnitDefinition, enabled: boolean): HTMLTable
   }
 
   return tbody;
+}
+
+function createFieldLabelRow(): HTMLTableRowElement {
+  const row = document.createElement("tr");
+  row.className = "unit-field-label-row";
+
+  const spacerCell = row.insertCell();
+  spacerCell.className = "parameter-spacer";
+
+  const labelCell = row.insertCell();
+  labelCell.colSpan = 2;
+  labelCell.className = "parameter-editor-cell";
+
+  const labelGrid = document.createElement("div");
+  labelGrid.className = "parameter-editor-row field-column-labels";
+  const parameterHeading = document.createElement("span");
+  parameterHeading.className = "parameter-label-heading";
+  labelGrid.appendChild(parameterHeading);
+
+  ["Start", "End", "Curve", "Round"].forEach((labelText) => {
+    const label = document.createElement("span");
+    label.className = "field-column-label";
+    label.textContent = labelText;
+    labelGrid.appendChild(label);
+  });
+
+  labelCell.appendChild(labelGrid);
+  return row;
 }
 
 function createParameterRow(kind: UnitDefinition["kind"], parameterName: string, spec: ParameterSpec): HTMLTableRowElement {
@@ -1487,14 +1519,14 @@ function createParameterRow(kind: UnitDefinition["kind"], parameterName: string,
 
   const startControl = createValueControl(spec, "linear-start");
   if (kind === "settings") {
-    editorRow.appendChild(createFieldEditor("Value", startControl, "start", false));
+    editorRow.appendChild(createFieldEditor(startControl, "start", false, parameterName));
     return row;
   }
 
-  editorRow.appendChild(createFieldEditor("Start", startControl, "start", true));
+  editorRow.appendChild(createFieldEditor(startControl, "start", true, `${parameterName} start`));
 
   const endControl = createValueControl(spec, "linear-end");
-  editorRow.appendChild(createFieldEditor("End", endControl, "end", true));
+  editorRow.appendChild(createFieldEditor(endControl, "end", true, `${parameterName} end`));
 
   const curve = document.createElement("input");
   curve.type = "number";
@@ -1504,28 +1536,28 @@ function createParameterRow(kind: UnitDefinition["kind"], parameterName: string,
   curve.max = "100";
   curve.value = "0";
   curve.className = "linear-input linear-curve";
-  editorRow.appendChild(createFieldEditor("Curve", curve, "curve", true));
+  editorRow.appendChild(createFieldEditor(curve, "curve", true, `${parameterName} curve`));
 
   const round = document.createElement("input");
   round.type = "checkbox";
   round.className = "linear-input linear-round";
-  editorRow.appendChild(createFieldEditor("Round", round, "round", true));
+  editorRow.appendChild(createFieldEditor(round, "round", true, `${parameterName} round`));
   return row;
 }
 
 function createFieldEditor(
-  label: string,
   control: HTMLInputElement | HTMLSelectElement,
   slot: string,
   lockable: boolean,
+  accessibleLabel: string,
 ): HTMLDivElement {
   control.dataset.fieldSlot = slot;
+  control.setAttribute("aria-label", accessibleLabel);
   const editor = document.createElement("div");
-  editor.className = lockable ? "field-editor field-cell has-field-lock" : "field-editor field-cell";
-  const fieldLabel = document.createElement("span");
-  fieldLabel.className = "field-label";
-  fieldLabel.textContent = label;
-  editor.append(fieldLabel, control);
+  editor.className = lockable
+    ? `field-editor field-cell has-field-lock field-editor-${slot}`
+    : `field-editor field-cell field-editor-${slot}`;
+  editor.appendChild(control);
   if (lockable) {
     editor.appendChild(createLockButton("field-lock", `Lock ${slot} field against randomization`));
   }
