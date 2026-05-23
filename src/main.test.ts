@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { renderWasmWavetable } from "./wasm-engine";
 
 const mockTables = [new Float32Array([0, 0.5, -0.5, 0])];
 const audioInstances = vi.hoisted(() => [] as Array<{
@@ -150,6 +151,32 @@ describe("Warpenter app", () => {
     expect(fieldLabels).toEqual(["Start", "End", "Curve", "Round"]);
   });
 
+  it("keeps muted generators collapsed and disables their minimize buttons until active", async () => {
+    await bootApp();
+
+    const mutedUnit = generatorBodies()[0];
+    const enabled = mutedUnit?.querySelector<HTMLInputElement>(".unit-enabled");
+    const collapse = mutedUnit?.querySelector<HTMLButtonElement>(".unit-collapse");
+    expect(mutedUnit?.dataset.unitName).toBe("sinewave FM");
+    expect(enabled?.checked).toBe(false);
+    expect(mutedUnit?.classList.contains("unit-collapsed")).toBe(true);
+    expect(collapse?.disabled).toBe(true);
+    expect(collapse?.getAttribute("aria-expanded")).toBe("false");
+
+    enabled!.checked = true;
+    enabled!.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(mutedUnit?.classList.contains("unit-collapsed")).toBe(false);
+    expect(collapse?.disabled).toBe(false);
+
+    collapse?.click();
+    expect(mutedUnit?.classList.contains("unit-collapsed")).toBe(true);
+
+    enabled!.checked = false;
+    enabled!.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(mutedUnit?.classList.contains("unit-collapsed")).toBe(true);
+    expect(collapse?.disabled).toBe(true);
+  });
+
   it("supports single-key generator navigation without putting selection into undo history", async () => {
     await bootApp();
 
@@ -251,6 +278,28 @@ describe("Warpenter app", () => {
     fileName.focus();
     pressKey("KeyJ", "j");
     expect(document.querySelector<HTMLTableSectionElement>(".unit-selected")).toBe(selectedBeforeFileName);
+  });
+
+  it("regenerates field edits on the next frame while localStorage persistence remains debounced", async () => {
+    await bootApp();
+    vi.mocked(renderWasmWavetable).mockClear();
+
+    const overtoneShape = document.querySelector<HTMLInputElement>(
+      'tr[data-parameter-name="overtone shape"] .linear-start',
+    );
+    overtoneShape!.value = "42";
+    overtoneShape!.dispatchEvent(new Event("input", { bubbles: true }));
+
+    await Promise.resolve();
+    expect(renderWasmWavetable).not.toHaveBeenCalled();
+
+    flushAnimationFrames(1);
+    await Promise.resolve();
+    expect(renderWasmWavetable).toHaveBeenCalledTimes(1);
+    expect(window.localStorage.getItem("warpenter-state-v1")).toBeNull();
+
+    vi.advanceTimersByTime(350);
+    expect(window.localStorage.getItem("warpenter-state-v1")).not.toBeNull();
   });
 
   it("starts first-load exports with a timestamped Warpenter filename", async () => {

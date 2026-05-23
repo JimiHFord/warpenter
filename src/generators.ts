@@ -8,6 +8,11 @@ export interface ParameterSpec {
   max?: number;
   type?: string;
   options?: readonly string[];
+  randomization?: {
+    min: number;
+    max: number;
+    integer?: boolean;
+  };
 }
 
 export interface UnitDefinition {
@@ -52,10 +57,10 @@ export const sourceDefinitions: UnitDefinition[] = [
     functionName: "sinewaveFM",
     enabled: true,
     parameters: {
-      "modulator ratio": { default: 1, min: 0, max: 256 },
-      "modulator volume": { type: "dB", default: -12, min: -96, max: 24 },
-      "carrier ratio": { default: 1, min: 1, max: 256 },
-      "carrier volume": { type: "dB", default: 0, min: -96, max: 0 },
+      "modulator ratio": { default: 1, min: 0, max: 256, randomization: { min: 0.25, max: 32 } },
+      "modulator volume": { type: "dB", default: -12, min: -96, max: 24, randomization: { min: -36, max: 12 } },
+      "carrier ratio": { default: 1, min: 1, max: 256, randomization: { min: 1, max: 32 } },
+      "carrier volume": { type: "dB", default: 0, min: -96, max: 0, randomization: { min: -18, max: 0 } },
     },
   },
   {
@@ -63,9 +68,9 @@ export const sourceDefinitions: UnitDefinition[] = [
     kind: "sources",
     functionName: "resonantSine",
     parameters: {
-      "overtone ratio": { default: 1, min: 1, max: 256 },
-      "overtone shape": { default: 0, min: 0, max: 100 },
-      volume: { type: "dB", default: 0, min: -96, max: 0 },
+      "overtone ratio": { default: 1, min: 1, max: 256, randomization: { min: 1, max: 64 } },
+      "overtone shape": { default: 0, min: 0, max: 100, randomization: { min: 0, max: 100 } },
+      volume: { type: "dB", default: 0, min: -96, max: 0, randomization: { min: -24, max: 0 } },
     },
   },
   {
@@ -73,9 +78,9 @@ export const sourceDefinitions: UnitDefinition[] = [
     kind: "sources",
     functionName: "peakSine",
     parameters: {
-      "ratio A": { default: 1, min: 1, max: 256 },
-      "ratio B": { default: 1, min: 1, max: 256 },
-      volume: { type: "dB", default: 0, min: -96, max: 0 },
+      "ratio A": { default: 1, min: 1, max: 256, randomization: { min: 1, max: 64 } },
+      "ratio B": { default: 1, min: 1, max: 256, randomization: { min: 1, max: 64 } },
+      volume: { type: "dB", default: 0, min: -96, max: 0, randomization: { min: -24, max: 0 } },
     },
   },
   {
@@ -83,10 +88,10 @@ export const sourceDefinitions: UnitDefinition[] = [
     kind: "sources",
     functionName: "noise",
     parameters: {
-      seed: { default: 1, min: 1 },
-      rate: { default: 32, min: 2 },
-      ramp: { type: "%", default: 100, min: 0, max: 100 },
-      volume: { type: "dB", default: 0, min: -96, max: 0 },
+      seed: { default: 1, min: 1, randomization: { min: 1, max: 9999, integer: true } },
+      rate: { default: 32, min: 2, randomization: { min: 2, max: 128, integer: true } },
+      ramp: { type: "%", default: 100, min: 0, max: 100, randomization: { min: 0, max: 100 } },
+      volume: { type: "dB", default: 0, min: -96, max: 0, randomization: { min: -36, max: -6 } },
     },
   },
 ];
@@ -97,8 +102,8 @@ export const effectDefinitions: UnitDefinition[] = [
     kind: "effects",
     functionName: "clip",
     parameters: {
-      gain: { type: "dB", default: 0, min: -64, max: 64 },
-      bias: { type: "%", default: 0, min: -200, max: 200 },
+      gain: { type: "dB", default: 0, min: -64, max: 64, randomization: { min: -12, max: 36 } },
+      bias: { type: "%", default: 0, min: -200, max: 200, randomization: { min: -100, max: 100 } },
     },
   },
   {
@@ -106,8 +111,8 @@ export const effectDefinitions: UnitDefinition[] = [
     kind: "effects",
     functionName: "tanh",
     parameters: {
-      gain: { type: "dB", default: 0, min: -64, max: 64 },
-      bias: { type: "%", default: 0, min: -200, max: 200 },
+      gain: { type: "dB", default: 0, min: -64, max: 64, randomization: { min: -12, max: 36 } },
+      bias: { type: "%", default: 0, min: -200, max: 200, randomization: { min: -100, max: 100 } },
     },
   },
   {
@@ -115,7 +120,7 @@ export const effectDefinitions: UnitDefinition[] = [
     kind: "effects",
     functionName: "bitCrush",
     parameters: {
-      bits: { default: 32, min: 1, max: 32 },
+      bits: { default: 32, min: 1, max: 32, randomization: { min: 4, max: 16, integer: true } },
     },
   },
   {
@@ -123,8 +128,8 @@ export const effectDefinitions: UnitDefinition[] = [
     kind: "effects",
     functionName: "downsample",
     parameters: {
-      rate: { default: 32, min: 2 },
-      ramp: { type: "%", default: 0, min: 0, max: 100 },
+      rate: { default: 32, min: 2, randomization: { min: 2, max: 128, integer: true } },
+      ramp: { type: "%", default: 0, min: 0, max: 100, randomization: { min: 0, max: 100 } },
     },
   },
   {
@@ -132,8 +137,8 @@ export const effectDefinitions: UnitDefinition[] = [
     kind: "effects",
     functionName: "ringmod",
     parameters: {
-      ratio: { default: 1, min: 1, max: 256 },
-      "carrier gain": { default: 0, min: 0, max: 64 },
+      ratio: { default: 1, min: 1, max: 256, randomization: { min: 1, max: 64 } },
+      "carrier gain": { default: 0, min: 0, max: 64, randomization: { min: 0, max: 32 } },
     },
   },
 ];

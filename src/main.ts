@@ -144,7 +144,6 @@ const DEFAULT_AUDIO_STATE: AudioUiState = {
 let draggingBody: HTMLTableSectionElement | null = null;
 let waveTables: Float32Array[] = [];
 let plotUpdateRequested = true;
-let generateTimer: number | null = null;
 let storageTimer: number | null = null;
 let copyFeedbackTimer: number | null = null;
 let lastCommittedState: AppState | null = null;
@@ -992,7 +991,7 @@ function applyTheme(theme: ThemeId): void {
 
 function readCollapsedUnitKeys(): string[] {
   return getGeneratorBodies()
-    .map((body, index) => (body.classList.contains("unit-collapsed") ? unitStateKey(body, index) : ""))
+    .map((body, index) => (isUnitActive(body) && body.classList.contains("unit-collapsed") ? unitStateKey(body, index) : ""))
     .filter((key) => key.length > 0);
 }
 
@@ -1213,7 +1212,7 @@ function moveSelectedGenerator(offset: number): void {
   }
   selectUnitBody(body);
   commitUserStateChange();
-  queueAutoGenerate();
+  regenerateNow();
 }
 
 function toggleSelectedGeneratorEnabled(): void {
@@ -1224,9 +1223,10 @@ function toggleSelectedGeneratorEnabled(): void {
   }
 
   enabled.checked = !enabled.checked;
+  syncUnitEnabledState(body);
   selectUnitBody(body);
   commitUserStateChange();
-  queueAutoGenerate();
+  regenerateNow();
 }
 
 function randomizeAllActiveGenerators(): void {
@@ -1295,14 +1295,46 @@ function randomizeFieldControl(control: HTMLInputElement | HTMLSelectElement): b
 }
 
 function randomNumericControlValue(control: HTMLInputElement): number {
-  const min = Number.isFinite(Number(control.min)) && control.min !== "" ? Number(control.min) : fallbackMinimum(control);
-  const max = Number.isFinite(Number(control.max)) && control.max !== "" ? Number(control.max) : fallbackMaximum(control, min);
+  const range = randomizationRangeForControl(control);
+  const min = range.min;
+  const max = range.max;
   const raw = min + Math.random() * (max - min);
-  if (Number.isInteger(min) && Number.isInteger(max)) {
+  if (range.integer) {
     return Math.round(raw);
   }
 
   return Math.round(raw * 1000) / 1000;
+}
+
+function randomizationRangeForControl(control: HTMLInputElement): { min: number; max: number; integer: boolean } {
+  if (control.classList.contains("linear-curve")) {
+    return { min: -60, max: 60, integer: false };
+  }
+
+  const spec = parameterSpecForControl(control);
+  if (spec?.randomization) {
+    return {
+      min: spec.randomization.min,
+      max: spec.randomization.max,
+      integer: Boolean(spec.randomization.integer),
+    };
+  }
+
+  const min = Number.isFinite(Number(control.min)) && control.min !== "" ? Number(control.min) : fallbackMinimum(control);
+  const max = Number.isFinite(Number(control.max)) && control.max !== "" ? Number(control.max) : fallbackMaximum(control, min);
+  return { min, max, integer: Number.isInteger(min) && Number.isInteger(max) };
+}
+
+function parameterSpecForControl(control: HTMLInputElement | HTMLSelectElement): ParameterSpec | null {
+  const row = control.closest<HTMLTableRowElement>(".unit-parameter");
+  const body = control.closest<HTMLTableSectionElement>(".unit-body");
+  const unitName = body?.dataset.unitName;
+  const parameterName = row?.dataset.parameterName;
+  if (!unitName || !parameterName || body?.classList.contains("unit-settings")) {
+    return null;
+  }
+
+  return findDefinition(unitName).parameters[parameterName] ?? null;
 }
 
 function fallbackMinimum(control: HTMLInputElement): number {
@@ -1338,22 +1370,58 @@ function finishRandomization(changed: boolean): void {
   }
 
   commitUserStateChange();
-  queueAutoGenerate();
+  regenerateNow();
 }
 
 function unitStateKey(body: HTMLTableSectionElement, index: number): string {
   return `${index}:${body.dataset.unitName ?? ""}`;
 }
 
+function isUnitActive(body: HTMLTableSectionElement): boolean {
+  return body.classList.contains("unit-settings") || Boolean(body.querySelector<HTMLInputElement>(".unit-enabled")?.checked);
+}
+
+function syncUnitEnabledState(body: HTMLTableSectionElement): void {
+  if (body.classList.contains("unit-settings")) {
+    return;
+  }
+
+  if (!isUnitActive(body)) {
+    setUnitCollapsed(body, true);
+    return;
+  }
+
+  if (body.querySelector<HTMLButtonElement>(".unit-collapse")?.disabled) {
+    setUnitCollapsed(body, false);
+    return;
+  }
+
+  updateUnitCollapseButton(body);
+}
+
 function setUnitCollapsed(body: HTMLTableSectionElement, collapsed: boolean): void {
-  body.classList.toggle("unit-collapsed", collapsed);
+  const nextCollapsed = isUnitActive(body) ? collapsed : true;
+  body.classList.toggle("unit-collapsed", nextCollapsed);
+  updateUnitCollapseButton(body);
+}
+
+function updateUnitCollapseButton(body: HTMLTableSectionElement): void {
   const button = body.querySelector<HTMLButtonElement>(".unit-collapse");
   if (!button) {
     return;
   }
 
   const name = body.dataset.unitName ?? "generator";
-  button.setAttribute("aria-expanded", String(!collapsed));
+  const active = isUnitActive(body);
+  const collapsed = body.classList.contains("unit-collapsed");
+  button.disabled = !active;
+  button.setAttribute("aria-expanded", String(active && !collapsed));
+  if (!active) {
+    button.setAttribute("aria-label", `${name} is muted`);
+    button.title = `Enable ${name} to expand`;
+    return;
+  }
+
   button.setAttribute("aria-label", collapsed ? `Expand ${name}` : `Collapse ${name}`);
   button.title = collapsed ? `Expand ${name}` : `Collapse ${name}`;
 }
@@ -1408,6 +1476,9 @@ function createUnitBody(definition: UnitDefinition, enabled: boolean): HTMLTable
     collapse.setAttribute("aria-label", `Collapse ${definition.name}`);
     collapse.title = `Collapse ${definition.name}`;
     collapse.addEventListener("click", () => {
+      if (!isUnitActive(tbody)) {
+        return;
+      }
       setUnitCollapsed(tbody, !tbody.classList.contains("unit-collapsed"));
       commitUserStateChange();
     });
@@ -1443,7 +1514,7 @@ function createUnitBody(definition: UnitDefinition, enabled: boolean): HTMLTable
     button.addEventListener("click", () => {
       tbody.remove();
       commitUserStateChange();
-      queueAutoGenerate();
+      regenerateNow();
     });
     deleteCell.appendChild(button);
   }
@@ -1463,6 +1534,7 @@ function createUnitBody(definition: UnitDefinition, enabled: boolean): HTMLTable
 
   if (definition.kind !== "settings") {
     initDragEvents(tbody);
+    syncUnitEnabledState(tbody);
   }
 
   return tbody;
@@ -1714,7 +1786,7 @@ function initDropEvents(): void {
     draggingBody = null;
     clearDropFocus();
     commitUserStateChange();
-    queueAutoGenerate();
+    regenerateNow();
   });
 }
 
@@ -1852,15 +1924,8 @@ async function generate(): Promise<void> {
   requestPlotUpdate();
 }
 
-function queueAutoGenerate(): void {
-  if (generateTimer !== null) {
-    window.clearTimeout(generateTimer);
-  }
-
-  generateTimer = window.setTimeout(() => {
-    generateTimer = null;
-    void generate();
-  }, 150);
+function regenerateNow(): void {
+  void generate();
 }
 
 function updateFileStats(): void {
@@ -2338,13 +2403,19 @@ function installEventHandlers(): void {
       byId<HTMLTableElement>("unit-list").appendChild(createUnitBody(definition, true));
       target.selectedIndex = 0;
     }
+    if (target instanceof HTMLInputElement && target.classList.contains("unit-enabled")) {
+      const body = target.closest<HTMLTableSectionElement>(".unit-body");
+      if (body) {
+        syncUnitEnabledState(body);
+      }
+    }
     commitUserStateChange();
-    queueAutoGenerate();
+    regenerateNow();
   });
 
   byId<HTMLFormElement>("generator-form").addEventListener("input", () => {
     schedulePersistState();
-    queueAutoGenerate();
+    regenerateNow();
   });
 
   byId<HTMLFormElement>("download-form").addEventListener("change", () => {
