@@ -125,6 +125,21 @@ describe("Warpenter app", () => {
     expect(frequencyOutput.value).toMatch(/Hz \(C\)$/);
   });
 
+  it("uses compact per-generator parameter editors instead of the stale global column labels", async () => {
+    await bootApp();
+
+    expect(document.querySelector("#unit-list thead")).toBeNull();
+    const unit = generatorBodies()[0];
+    expect(unit?.querySelector(".unit-name-row .unit-lock")).not.toBeNull();
+    expect(unit?.querySelector(".unit-actions .unit-lock")).toBeNull();
+
+    const row = unit?.querySelector<HTMLTableRowElement>(".unit-parameter");
+    expect(row?.querySelector(".parameter-editor-row")).not.toBeNull();
+    expect(row?.querySelector(".field-editor .field-lock")).not.toBeNull();
+    const fieldLabels = Array.from(row?.querySelectorAll(".field-label") ?? []).map((label) => label.textContent);
+    expect(fieldLabels).toEqual(["Start", "End", "Curve", "Round"]);
+  });
+
   it("supports single-key generator navigation without putting selection into undo history", async () => {
     await bootApp();
 
@@ -188,7 +203,7 @@ describe("Warpenter app", () => {
     expect(unitPeer?.value).toBe(unitPeerValue);
   });
 
-  it("toggles generator, row, and field locks from the keyboard", async () => {
+  it("keeps selection synced while tabbing to lock controls without digit lock shortcuts", async () => {
     await bootApp();
     pressKey("KeyJ", "j");
     pressKey("KeyN", "n");
@@ -196,15 +211,43 @@ describe("Warpenter app", () => {
     const selectedField = document.querySelector<HTMLInputElement>(".field-selected");
     const selectedRow = selectedField?.closest<HTMLTableRowElement>(".unit-parameter");
     const selectedUnit = selectedField?.closest<HTMLTableSectionElement>(".unit-body");
+    const fieldLock = selectedField?.closest("td")?.querySelector<HTMLButtonElement>(".field-lock");
+
+    fieldLock?.focus();
+    expect(document.querySelector<HTMLInputElement>(".field-selected")).toBe(selectedField);
 
     pressKey("Digit3", "3");
-    expect(selectedField?.closest("td")?.querySelector(".field-lock")?.getAttribute("aria-pressed")).toBe("true");
+    expect(fieldLock?.getAttribute("aria-pressed")).toBe("false");
 
-    pressKey("Digit2", "2");
-    expect(selectedRow?.querySelector(".row-lock")?.getAttribute("aria-pressed")).toBe("true");
+    selectedRow?.querySelector<HTMLButtonElement>(".row-lock")?.focus();
+    expect(document.querySelector<HTMLTableRowElement>(".row-selected")).toBe(selectedRow);
 
-    pressKey("Digit1", "1");
-    expect(selectedUnit?.querySelector(".unit-lock")?.getAttribute("aria-pressed")).toBe("true");
+    selectedUnit?.querySelector<HTMLButtonElement>(".unit-lock")?.focus();
+    expect(document.querySelector<HTMLTableSectionElement>(".unit-selected")).toBe(selectedUnit);
+  });
+
+  it("keeps workflow shortcuts active in generator fields but inactive in the export name field", async () => {
+    await bootApp();
+    pressKey("KeyJ", "j");
+    pressKey("KeyN", "n");
+
+    const firstField = document.querySelector<HTMLInputElement>(".field-selected");
+    firstField?.focus();
+    pressKey("KeyN", "n");
+    expect(document.querySelector<HTMLInputElement>(".field-selected")).not.toBe(firstField);
+
+    const selectedBeforeFileName = document.querySelector<HTMLTableSectionElement>(".unit-selected");
+    const fileName = document.getElementById("file-name") as HTMLInputElement;
+    fileName.focus();
+    pressKey("KeyJ", "j");
+    expect(document.querySelector<HTMLTableSectionElement>(".unit-selected")).toBe(selectedBeforeFileName);
+  });
+
+  it("starts first-load exports with a timestamped Warpenter filename", async () => {
+    await bootApp();
+    expect((document.getElementById("file-name") as HTMLInputElement).value).toMatch(
+      /^warpenter-wt-\d{8}-\d{4}$/,
+    );
   });
 
   it("lazy-loads presets, makes preset loading undoable, and opens save instructions", async () => {

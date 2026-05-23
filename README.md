@@ -46,7 +46,7 @@ keyboard workflow, undo, randomization locks, presets, and modal controls.
 
 ## Keyboard Workflow
 
-Warpenter supports a single-key workflow when no text or number field is
+Warpenter supports a single-key workflow unless the file export name field is
 focused:
 
 | Key | Action |
@@ -60,7 +60,6 @@ focused:
 | `G` | Randomize the selected generator |
 | `R` | Randomize the selected row |
 | `V` | Randomize the selected field |
-| `1` / `2` / `3` | Toggle generator, row, or field randomization locks |
 | `?` | Open the keyboard help |
 
 Lock icons on generators, rows, and fields exclude those scopes from

@@ -100,6 +100,7 @@ interface PresetDocument {
 
 const configuredDefaultTheme = import.meta.env.VITE_DEFAULT_THEME?.trim();
 const DEFAULT_THEME_ID: ThemeId = isThemeId(configuredDefaultTheme) ? configuredDefaultTheme : "neon-purple";
+const DEFAULT_EXPORT_FILE_NAME = createDefaultFileName();
 const STORAGE_KEY = "warpenter-state-v1";
 const STORAGE_WRITE_DELAY_MS = 350;
 const MAX_HISTORY_STATES = 100;
@@ -185,6 +186,13 @@ function byId<T extends HTMLElement>(id: string): T {
   return element as T;
 }
 
+function createDefaultFileName(date = new Date()): string {
+  const pad = (value: number): string => String(value).padStart(2, "0");
+  return `warpenter-wt-${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(
+    date.getHours(),
+  )}${pad(date.getMinutes())}`;
+}
+
 function setupShell(): void {
   appElement.innerHTML = `
     <dialog class="info-dialog" id="info-dialog" closedby="any">
@@ -220,7 +228,7 @@ function setupShell(): void {
         <button class="icon-button dialog-close close-icon" value="cancel" aria-label="Close" title="Close"></button>
       </form>
       <h2>Keyboard Workflow</h2>
-      <p>Use single-key shortcuts when no text or number field is focused.</p>
+      <p>Use single-key shortcuts unless the file export name field is focused.</p>
       <table class="shortcut-table">
         <tbody>
           <tr><th>J / K</th><td>Select next or previous generator</td></tr>
@@ -232,7 +240,6 @@ function setupShell(): void {
           <tr><th>G</th><td>Randomize the selected generator</td></tr>
           <tr><th>R</th><td>Randomize the selected row</td></tr>
           <tr><th>V</th><td>Randomize the selected field</td></tr>
-          <tr><th>1 / 2 / 3</th><td>Toggle generator, row, or field randomization locks</td></tr>
           <tr><th>?</th><td>Open this help</td></tr>
         </tbody>
       </table>
@@ -348,26 +355,7 @@ function setupShell(): void {
               <div id="generator-panel" role="tabpanel" aria-labelledby="generator-tab">
                 <h2>Generator</h2>
                 <form id="generator-form">
-                  <table id="unit-list">
-                    <colgroup>
-                      <col class="col-toggle">
-                      <col>
-                      <col class="col-num-input">
-                      <col class="col-num-input">
-                      <col class="col-num-input">
-                      <col class="col-toggle">
-                    </colgroup>
-                    <thead>
-                      <tr>
-                        <th></th>
-                        <th></th>
-                        <th>Start</th>
-                        <th>End</th>
-                        <th>Curve</th>
-                        <th>Round</th>
-                      </tr>
-                    </thead>
-                  </table>
+                  <table id="unit-list"></table>
 
                   <p>
                     <label>
@@ -414,7 +402,7 @@ function setupShell(): void {
                 <p>
                   <label>
                     Name
-                    <input type="text" id="file-name" value="wavetable">
+                    <input type="text" id="file-name" value="${DEFAULT_EXPORT_FILE_NAME}">
                   </label>
                 </p>
                 <p>
@@ -724,7 +712,7 @@ function normalizeAppState(parsed: unknown): AppState | null {
     ui: {
       theme: isThemeId(ui.theme) ? ui.theme : DEFAULT_THEME_ID,
       autoGenerate: true,
-      fileName: String(ui.fileName ?? "wavetable"),
+      fileName: String(ui.fileName ?? DEFAULT_EXPORT_FILE_NAME),
       fileBits: bits as ExportEncoding,
       fileFormat: format,
       addClmChunk: Boolean(ui.addClmChunk),
@@ -1076,7 +1064,7 @@ function fieldRandomizationKey(control: HTMLInputElement | HTMLSelectElement): s
 }
 
 function fieldLockButton(control: HTMLInputElement | HTMLSelectElement): HTMLButtonElement | null {
-  return control.closest("td")?.querySelector<HTMLButtonElement>(".field-lock") ?? null;
+  return control.closest(".field-editor")?.querySelector<HTMLButtonElement>(".field-lock") ?? null;
 }
 
 function getGeneratorBodies(): HTMLTableSectionElement[] {
@@ -1093,6 +1081,14 @@ function getSelectedFieldControl(): HTMLInputElement | HTMLSelectElement | null 
   return document.querySelector<HTMLInputElement | HTMLSelectElement>(".field-selected");
 }
 
+function getSelectedParameterRow(): HTMLTableRowElement | null {
+  return (
+    document.querySelector<HTMLTableRowElement>(".row-selected") ??
+    getSelectedFieldControl()?.closest<HTMLTableRowElement>(".unit-parameter") ??
+    null
+  );
+}
+
 function selectUnitBody(body: HTMLTableSectionElement): void {
   if (body.classList.contains("unit-settings")) {
     return;
@@ -1102,6 +1098,16 @@ function selectUnitBody(body: HTMLTableSectionElement): void {
   document.querySelectorAll(".row-selected").forEach((element) => element.classList.remove("row-selected"));
   document.querySelectorAll(".field-selected").forEach((element) => element.classList.remove("field-selected"));
   body.classList.add("unit-selected");
+}
+
+function selectParameterRow(row: HTMLTableRowElement): void {
+  const body = row.closest<HTMLTableSectionElement>(".unit-body");
+  if (!body || body.classList.contains("unit-settings")) {
+    return;
+  }
+
+  selectUnitBody(body);
+  row.classList.add("row-selected");
 }
 
 function selectGeneratorByOffset(offset: number): void {
@@ -1142,7 +1148,7 @@ function selectFieldControl(control: HTMLInputElement | HTMLSelectElement): void
   }
 
   selectUnitBody(body);
-  row.classList.add("row-selected");
+  selectParameterRow(row);
   control.classList.add("field-selected");
 }
 
@@ -1217,29 +1223,6 @@ function toggleSelectedGeneratorEnabled(): void {
   queueAutoGenerate();
 }
 
-function toggleSelectedGeneratorLock(): void {
-  const button = getSelectedUnitBody()?.querySelector<HTMLButtonElement>(".unit-lock");
-  if (button) {
-    toggleRandomizationLock(button);
-  }
-}
-
-function toggleSelectedRowLock(): void {
-  const row = getSelectedFieldControl()?.closest<HTMLTableRowElement>(".unit-parameter");
-  const button = row?.querySelector<HTMLButtonElement>(".row-lock");
-  if (button) {
-    toggleRandomizationLock(button);
-  }
-}
-
-function toggleSelectedFieldLock(): void {
-  const control = getSelectedFieldControl();
-  const button = control ? fieldLockButton(control) : null;
-  if (button) {
-    toggleRandomizationLock(button);
-  }
-}
-
 function randomizeAllActiveGenerators(): void {
   const changed = getGeneratorBodies()
     .filter((body) => body.querySelector<HTMLInputElement>(".unit-enabled")?.checked)
@@ -1253,7 +1236,7 @@ function randomizeSelectedGenerator(): void {
 }
 
 function randomizeSelectedRow(): void {
-  const row = getSelectedFieldControl()?.closest<HTMLTableRowElement>(".unit-parameter");
+  const row = getSelectedParameterRow();
   finishRandomization(Boolean(row && randomizeParameterRow(row)));
 }
 
@@ -1394,7 +1377,9 @@ function createUnitBody(definition: UnitDefinition, enabled: boolean): HTMLTable
   }
 
   const header = tbody.insertRow();
+  header.className = "unit-header-row";
   const enableCell = header.insertCell();
+  enableCell.className = "unit-enable-cell";
   const enabledInput = document.createElement("input");
   enabledInput.type = "checkbox";
   enabledInput.className = "unit-enabled";
@@ -1405,7 +1390,9 @@ function createUnitBody(definition: UnitDefinition, enabled: boolean): HTMLTable
   enableCell.appendChild(enabledInput);
 
   const nameCell = header.insertCell();
-  nameCell.colSpan = 4;
+  nameCell.className = "unit-name-row";
+  const nameWrap = document.createElement("span");
+  nameWrap.className = "unit-name-wrap";
 
   if (definition.kind !== "settings") {
     const collapse = document.createElement("button");
@@ -1418,7 +1405,7 @@ function createUnitBody(definition: UnitDefinition, enabled: boolean): HTMLTable
       setUnitCollapsed(tbody, !tbody.classList.contains("unit-collapsed"));
       commitUserStateChange();
     });
-    nameCell.appendChild(collapse);
+    nameWrap.appendChild(collapse);
   }
 
   const name = document.createElement("span");
@@ -1429,15 +1416,19 @@ function createUnitBody(definition: UnitDefinition, enabled: boolean): HTMLTable
     small.textContent = " (fx)";
     name.appendChild(small);
   }
-  nameCell.appendChild(name);
+  nameWrap.appendChild(name);
+
+  if (definition.kind !== "settings") {
+    nameWrap.appendChild(createLockButton("unit-lock", `Lock ${definition.name} against randomization`));
+  }
+
+  nameCell.appendChild(nameWrap);
 
   const deleteCell = header.insertCell();
+  deleteCell.className = "unit-actions";
   if (definition.kind === "settings") {
     deleteCell.textContent = "";
   } else {
-    const lock = createLockButton("unit-lock", `Lock ${definition.name} against randomization`);
-    deleteCell.appendChild(lock);
-
     const button = document.createElement("button");
     button.type = "button";
     button.className = "icon-button unit-delete";
@@ -1458,7 +1449,7 @@ function createUnitBody(definition: UnitDefinition, enabled: boolean): HTMLTable
   const dropZone = tbody.insertRow();
   dropZone.className = "drop-zone";
   const cell = dropZone.insertCell();
-  cell.colSpan = 7;
+  cell.colSpan = 3;
 
   if (definition.kind !== "settings") {
     initDragEvents(tbody);
@@ -1472,32 +1463,39 @@ function createParameterRow(kind: UnitDefinition["kind"], parameterName: string,
   row.className = "unit-parameter";
   row.dataset.parameterName = parameterName;
 
-  const rowLockCell = row.insertCell();
+  const spacerCell = row.insertCell();
+  spacerCell.className = "parameter-spacer";
+
+  const editorCell = row.insertCell();
+  editorCell.colSpan = 2;
+  editorCell.className = kind === "settings" ? "settings-editor-cell" : "parameter-editor-cell";
+  const editorRow = document.createElement("div");
+  editorRow.className = kind === "settings" ? "settings-editor-row" : "parameter-editor-row";
+  editorCell.appendChild(editorRow);
+
+  const labelGroup = document.createElement("div");
+  labelGroup.className = "parameter-label-group";
   if (kind !== "settings") {
-    rowLockCell.appendChild(createLockButton("row-lock", `Lock ${parameterName} row against randomization`));
+    labelGroup.appendChild(createLockButton("row-lock", `Lock ${parameterName} row against randomization`));
   }
 
-  const labelCell = row.insertCell();
-  const label = document.createElement("label");
+  const label = document.createElement("span");
+  label.className = "parameter-name";
   label.textContent = spec.type ? `${parameterName} (${spec.type})` : parameterName;
-  labelCell.appendChild(label);
+  labelGroup.appendChild(label);
+  editorRow.appendChild(labelGroup);
 
-  const startCell = row.insertCell();
   const startControl = createValueControl(spec, "linear-start");
-  appendFieldControl(startCell, startControl, "start", kind !== "settings");
-
   if (kind === "settings") {
-    startCell.colSpan = 2;
-    row.insertCell();
-    row.insertCell();
+    editorRow.appendChild(createFieldEditor("Value", startControl, "start", false));
     return row;
   }
 
-  const endCell = row.insertCell();
-  const endControl = createValueControl(spec, "linear-end");
-  appendFieldControl(endCell, endControl, "end", true);
+  editorRow.appendChild(createFieldEditor("Start", startControl, "start", true));
 
-  const curveCell = row.insertCell();
+  const endControl = createValueControl(spec, "linear-end");
+  editorRow.appendChild(createFieldEditor("End", endControl, "end", true));
+
   const curve = document.createElement("input");
   curve.type = "number";
   curve.step = "any";
@@ -1506,28 +1504,32 @@ function createParameterRow(kind: UnitDefinition["kind"], parameterName: string,
   curve.max = "100";
   curve.value = "0";
   curve.className = "linear-input linear-curve";
-  appendFieldControl(curveCell, curve, "curve", true);
+  editorRow.appendChild(createFieldEditor("Curve", curve, "curve", true));
 
-  const roundCell = row.insertCell();
   const round = document.createElement("input");
   round.type = "checkbox";
   round.className = "linear-input linear-round";
-  appendFieldControl(roundCell, round, "round", true);
+  editorRow.appendChild(createFieldEditor("Round", round, "round", true));
   return row;
 }
 
-function appendFieldControl(
-  cell: HTMLTableCellElement,
+function createFieldEditor(
+  label: string,
   control: HTMLInputElement | HTMLSelectElement,
   slot: string,
   lockable: boolean,
-): void {
+): HTMLDivElement {
   control.dataset.fieldSlot = slot;
-  cell.classList.toggle("field-cell", lockable);
-  cell.appendChild(control);
+  const editor = document.createElement("div");
+  editor.className = lockable ? "field-editor field-cell has-field-lock" : "field-editor field-cell";
+  const fieldLabel = document.createElement("span");
+  fieldLabel.className = "field-label";
+  fieldLabel.textContent = label;
+  editor.append(fieldLabel, control);
   if (lockable) {
-    cell.appendChild(createLockButton("field-lock", `Lock ${slot} field against randomization`));
+    editor.appendChild(createLockButton("field-lock", `Lock ${slot} field against randomization`));
   }
+  return editor;
 }
 
 function createLockButton(className: string, label: string): HTMLButtonElement {
@@ -1542,6 +1544,37 @@ function createLockButton(className: string, label: string): HTMLButtonElement {
     toggleRandomizationLock(button);
   });
   return button;
+}
+
+function handleGeneratorFocusIn(event: FocusEvent): void {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  const control = target.closest<HTMLInputElement | HTMLSelectElement>(FIELD_SELECTOR);
+  if (control) {
+    selectFieldControl(control);
+    return;
+  }
+
+  const fieldEditor = target.closest<HTMLElement>(".field-editor");
+  const fieldControl = fieldEditor?.querySelector<HTMLInputElement | HTMLSelectElement>(FIELD_SELECTOR);
+  if (fieldControl) {
+    selectFieldControl(fieldControl);
+    return;
+  }
+
+  const row = target.closest<HTMLTableRowElement>(".unit-parameter");
+  if (row) {
+    selectParameterRow(row);
+    return;
+  }
+
+  const body = target.closest<HTMLTableSectionElement>(".unit-body");
+  if (body) {
+    selectUnitBody(body);
+  }
 }
 
 function toggleRandomizationLock(button: HTMLButtonElement): void {
@@ -1829,7 +1862,7 @@ async function downloadCurrent(): Promise<void> {
 
   const format = byId<HTMLSelectElement>("file-format").value as ExportFormat;
   const encoding = Number(byId<HTMLSelectElement>("file-bits").value) as ExportEncoding;
-  let filename = byId<HTMLInputElement>("file-name").value.trim() || "wavetable";
+  let filename = byId<HTMLInputElement>("file-name").value.trim() || DEFAULT_EXPORT_FILE_NAME;
 
   if (byId<HTMLInputElement>("file-cycle-length").checked) {
     filename += `-WT${waveTables[0]?.length ?? 0}`;
@@ -2257,6 +2290,8 @@ function installEventHandlers(): void {
     commitUserStateChange();
     void generate();
   });
+
+  byId<HTMLFormElement>("generator-form").addEventListener("focusin", handleGeneratorFocusIn);
 
   byId<HTMLFormElement>("generator-form").addEventListener("change", (event) => {
     const target = event.target;
@@ -2711,6 +2746,10 @@ function setFrequencyFromMidiNote(note: number): void {
 }
 
 function handleDocumentKeyDown(event: KeyboardEvent): void {
+  if (isFileExportNameTarget(event.target)) {
+    return;
+  }
+
   if ((event.ctrlKey || event.metaKey) && event.code === "KeyZ") {
     event.preventDefault();
     if (event.shiftKey) {
@@ -2735,15 +2774,7 @@ function handleDocumentKeyDown(event: KeyboardEvent): void {
 }
 
 function handleWorkflowShortcut(event: KeyboardEvent): boolean {
-  const target = event.target;
-  if (
-    event.ctrlKey ||
-    event.metaKey ||
-    event.altKey ||
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLSelectElement ||
-    target instanceof HTMLTextAreaElement
-  ) {
+  if (event.ctrlKey || event.metaKey || event.altKey || isFileExportNameTarget(event.target)) {
     return false;
   }
 
@@ -2796,18 +2827,6 @@ function handleWorkflowShortcut(event: KeyboardEvent): boolean {
       event.preventDefault();
       randomizeSelectedField();
       return true;
-    case "1":
-      event.preventDefault();
-      toggleSelectedGeneratorLock();
-      return true;
-    case "2":
-      event.preventDefault();
-      toggleSelectedRowLock();
-      return true;
-    case "3":
-      event.preventDefault();
-      toggleSelectedFieldLock();
-      return true;
     case "?":
       event.preventDefault();
       byId<HTMLDialogElement>("help-dialog").showModal();
@@ -2819,6 +2838,13 @@ function handleWorkflowShortcut(event: KeyboardEvent): boolean {
     default:
       return false;
   }
+}
+
+function isFileExportNameTarget(target: EventTarget | null): boolean {
+  return (
+    (target instanceof HTMLElement && target.id === "file-name") ||
+    (document.activeElement instanceof HTMLElement && document.activeElement.id === "file-name")
+  );
 }
 
 function handleKeyboardPreview(event: KeyboardEvent): void {

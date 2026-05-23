@@ -633,9 +633,29 @@ th {
   width: 15%;
 }
 
+.unit-header-row {
+  position: relative;
+}
+
 .unit-body tr:first-child td {
   padding-top: 0.65rem;
   border-top: 1px dashed var(--accent-faint);
+}
+
+.unit-enable-cell,
+.parameter-spacer {
+  width: 2rem;
+}
+
+.unit-name-row {
+  min-width: 0;
+}
+
+.unit-name-wrap {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.45rem;
 }
 
 .unit-name {
@@ -735,7 +755,7 @@ th {
 }
 
 .lock-icon {
-  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5' y='11' width='14' height='10' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E");
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5' y='11' width='14' height='10' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 7.5-2'/%3E%3C/svg%3E");
 }
 
 .lock-icon:not(.is-locked) {
@@ -743,6 +763,7 @@ th {
 }
 
 .lock-icon.is-locked {
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5' y='11' width='14' height='10' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E");
   color: var(--accent-strong);
 }
 
@@ -772,13 +793,16 @@ th {
   align-items: center;
 }
 
-.unit-delete {
-  float: right;
+.unit-actions {
+  width: 2.4rem;
+  white-space: nowrap;
+  text-align: right;
 }
 
 .unit-lock {
-  float: right;
-  margin-left: 0.25rem;
+  width: 1.6rem;
+  min-width: 1.6rem;
+  min-height: 1.6rem;
 }
 
 .row-lock,
@@ -794,16 +818,85 @@ th {
   height: 0.86rem;
 }
 
-.field-cell {
+.parameter-editor-cell,
+.settings-editor-cell {
+  min-width: 0;
+}
+
+.parameter-editor-row,
+.settings-editor-row {
+  display: grid;
+  gap: 0.4rem;
+  align-items: end;
+}
+
+.parameter-editor-row {
+  grid-template-columns: minmax(7.5rem, 1.2fr) repeat(4, minmax(4.4rem, 0.9fr));
+}
+
+.settings-editor-row {
+  grid-template-columns: minmax(7.5rem, 1.2fr) minmax(8rem, 3.6fr);
+}
+
+.parameter-label-group {
   display: flex;
-  gap: 0.25rem;
+  min-width: 0;
   align-items: center;
+  gap: 0.35rem;
+  padding-bottom: 0.08rem;
+}
+
+.parameter-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-cell {
+  display: grid;
+  min-width: 0;
+  gap: 0.15rem 0.25rem;
+}
+
+.field-editor.has-field-lock {
+  grid-template-areas:
+    "label lock"
+    "control lock";
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.field-editor:not(.has-field-lock) {
+  grid-template-areas:
+    "label"
+    "control";
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.field-label {
+  grid-area: label;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.field-cell .linear-input {
+  grid-area: control;
 }
 
 .field-cell .linear-input:not([type="checkbox"]) {
   flex: 1 1 auto;
   min-width: 0;
   width: auto;
+}
+
+.field-cell .field-lock {
+  grid-area: lock;
+  align-self: end;
 }
 
 .unit-delete::before,
@@ -1079,8 +1172,16 @@ summary {
     font-size: 0.88rem;
   }
 
-  .col-num-input {
-    width: 18%;
+  .parameter-editor-row {
+    grid-template-columns: repeat(2, minmax(4.4rem, 1fr));
+  }
+
+  .settings-editor-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .parameter-label-group {
+    grid-column: 1 / -1;
   }
 
   input[type="checkbox"] {
