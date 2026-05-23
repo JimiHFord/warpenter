@@ -33,6 +33,44 @@ npm run build
 `public/generator.wasm` artifacts from the C++/Emscripten source in `wasm-src/`
 before running the TypeScript/Vite build.
 
+## Test
+
+```sh
+npm test
+```
+
+The test suite uses Vitest with jsdom for app-level behavior checks around
+keyboard workflow, undo, randomization locks, presets, and modal controls.
+
+## Keyboard Workflow
+
+Warpenter supports a single-key workflow when no text or number field is
+focused:
+
+| Key | Action |
+| --- | --- |
+| `J` / `K` | Select next or previous generator |
+| `N` / `P` | Select next or previous field in the selected generator |
+| `E` | Focus the selected field for editing |
+| `U` / `D` | Move the selected generator up or down |
+| `M` | Mute or unmute the selected generator |
+| `A` | Randomize all active unlocked generators |
+| `G` | Randomize the selected generator |
+| `R` | Randomize the selected row |
+| `V` | Randomize the selected field |
+| `1` / `2` / `3` | Toggle generator, row, or field randomization locks |
+| `?` | Open the keyboard help |
+
+Lock icons on generators, rows, and fields exclude those scopes from
+randomization while keeping them editable.
+
+## Presets
+
+Presets are lazy-loaded static JSON files under `public/presets/`. Add preset
+metadata to `public/presets/index.json`, place the preset state in its own JSON
+file, and open a pull request. The in-app save button shows the current patch as
+starter JSON for contributors.
+
 ## License
 
 Warpenter is licensed under the GNU Affero General Public License v3.0 only

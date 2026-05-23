@@ -65,6 +65,7 @@ interface UiState {
   addClmChunk: boolean;
   addCycleLength: boolean;
   collapsedUnits: string[];
+  randomizationLocks: RandomizationLocks;
 }
 
 interface AppState {
@@ -74,11 +75,33 @@ interface AppState {
   ui: UiState;
 }
 
+interface RandomizationLocks {
+  units: string[];
+  rows: string[];
+  fields: string[];
+}
+
+interface PresetIndexEntry {
+  id: string;
+  name: string;
+  path: string;
+  description?: string;
+}
+
+interface PresetDocument {
+  id: string;
+  name: string;
+  state: DesignerState;
+}
+
 const configuredDefaultTheme = import.meta.env.VITE_DEFAULT_THEME?.trim();
 const DEFAULT_THEME_ID: ThemeId = isThemeId(configuredDefaultTheme) ? configuredDefaultTheme : "neon-purple";
 const STORAGE_KEY = "warpenter-state-v1";
 const STORAGE_WRITE_DELAY_MS = 350;
 const MAX_HISTORY_STATES = 100;
+const FIELD_SELECTOR = ".linear-start, .linear-end, .linear-curve, .linear-round";
+const EMPTY_RANDOMIZATION_LOCKS: RandomizationLocks = { units: [], rows: [], fields: [] };
+const PRESET_PAGE_SIZE = 8;
 
 const DEFAULT_AUDIO_STATE: AudioUiState = {
   volume: -36,
@@ -104,6 +127,9 @@ let midiAccess: MIDIAccess | null = null;
 let selectedMidiInput: MIDIInput | null = null;
 let heldMidiNotes: number[] = [];
 let preferredMidiInputId = "";
+let presetsLoaded = false;
+let presetPage = 0;
+let presetEntries: PresetIndexEntry[] = [];
 let activeKnobDrag:
   | {
       input: HTMLInputElement;
@@ -148,6 +174,12 @@ function setupShell(): void {
         wavetable resources are available at
         <a href="https://wavetabl.es" target="_blank" rel="noreferrer">wavetabl.es</a>.
       </p>
+      <p>
+        <a class="icon-link" href="https://github.com/JimiHFord/warpenter" target="_blank" rel="noreferrer">
+          <span class="inline-icon github-icon" aria-hidden="true"></span>
+          GitHub repository
+        </a>
+      </p>
       <h2>FAQ</h2>
       <h3>What file should I export?</h3>
       <p>Most wavetable synths accept mono WAV files with every single-cycle waveform concatenated in order.</p>
@@ -155,11 +187,53 @@ function setupShell(): void {
       <p>Use total normalization for stable overall loudness, per-cycle normalization for even frames, and stretch cycle to remove cycle bias before scaling.</p>
     </dialog>
 
+    <dialog class="info-dialog" id="help-dialog" closedby="any">
+      <form method="dialog">
+        <button class="icon-button dialog-close close-icon" value="cancel" aria-label="Close" title="Close"></button>
+      </form>
+      <h2>Keyboard Workflow</h2>
+      <p>Use single-key shortcuts when no text or number field is focused.</p>
+      <table class="shortcut-table">
+        <tbody>
+          <tr><th>J / K</th><td>Select next or previous generator</td></tr>
+          <tr><th>N / P</th><td>Select next or previous field inside the selected generator</td></tr>
+          <tr><th>E</th><td>Edit the selected field</td></tr>
+          <tr><th>U / D</th><td>Move the selected generator up or down</td></tr>
+          <tr><th>M</th><td>Mute or unmute the selected generator</td></tr>
+          <tr><th>A</th><td>Randomize all active unlocked generators</td></tr>
+          <tr><th>G</th><td>Randomize the selected generator</td></tr>
+          <tr><th>R</th><td>Randomize the selected row</td></tr>
+          <tr><th>V</th><td>Randomize the selected field</td></tr>
+          <tr><th>1 / 2 / 3</th><td>Toggle generator, row, or field randomization locks</td></tr>
+          <tr><th>?</th><td>Open this help</td></tr>
+        </tbody>
+      </table>
+      <p>Locks exclude generators, rows, or fields from randomization while leaving them editable.</p>
+    </dialog>
+
+    <dialog class="info-dialog" id="save-preset-dialog" closedby="any">
+      <form method="dialog">
+        <button class="icon-button dialog-close close-icon" value="cancel" aria-label="Close" title="Close"></button>
+      </form>
+      <h2>Share A Preset</h2>
+      <p>
+        Presets live as separate JSON files under <code>public/presets</code> so GitHub Pages can lazy-load them.
+      </p>
+      <p>
+        To contribute one, fork the GitHub repository, add your preset JSON file, add it to
+        <code>public/presets/index.json</code>, and open a pull request.
+      </p>
+      <label class="preset-json-label">
+        Current preset JSON
+        <textarea id="save-preset-json" readonly></textarea>
+      </label>
+    </dialog>
+
     <div id="flex-center">
       <main>
         <section id="top-flex" class="top-section">
           <div class="top-flex-item">
-            <h1><span class="logo" aria-hidden="true">${logoMarkup}</span> Warpenter</h1>
+            <h1>Warpenter <span class="logo" aria-hidden="true">${logoMarkup}</span></h1>
           </div>
           <div class="top-flex-item header-actions">
             <label class="compact-control">
@@ -191,50 +265,88 @@ function setupShell(): void {
               title="Redo the last undone edit"
               disabled
             ></button>
-            <button id="open-info" type="button">Info</button>
+            <button
+              id="open-help"
+              type="button"
+              class="icon-button action-icon help-icon"
+              aria-label="Keyboard and randomization help"
+              title="Keyboard and randomization help"
+            ></button>
+            <button
+              id="open-info"
+              type="button"
+              class="icon-button action-icon info-icon"
+              aria-label="About Warpenter"
+              title="About Warpenter"
+            ></button>
           </div>
         </section>
 
         <div class="main-flex">
           <div class="main-flex-item">
-            <section>
-              <h2>Generator</h2>
-              <form id="generator-form">
-                <table id="unit-list">
-                  <colgroup>
-                    <col class="col-toggle">
-                    <col>
-                    <col class="col-num-input">
-                    <col class="col-num-input">
-                    <col class="col-num-input">
-                    <col class="col-toggle">
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th></th>
-                      <th></th>
-                      <th>Start</th>
-                      <th>End</th>
-                      <th>Curve</th>
-                      <th>Round</th>
-                    </tr>
-                  </thead>
-                </table>
+            <section class="designer-section">
+              <div class="tab-bar" role="tablist" aria-label="Designer views">
+                <button id="generator-tab" class="tab-button" type="button" role="tab" aria-controls="generator-panel" aria-selected="true">Generator</button>
+                <button id="presets-tab" class="tab-button" type="button" role="tab" aria-controls="presets-panel" aria-selected="false">Presets</button>
+              </div>
+              <div id="generator-panel" role="tabpanel" aria-labelledby="generator-tab">
+                <h2>Generator</h2>
+                <form id="generator-form">
+                  <table id="unit-list">
+                    <colgroup>
+                      <col class="col-toggle">
+                      <col>
+                      <col class="col-num-input">
+                      <col class="col-num-input">
+                      <col class="col-num-input">
+                      <col class="col-toggle">
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th></th>
+                        <th></th>
+                        <th>Start</th>
+                        <th>End</th>
+                        <th>Curve</th>
+                        <th>Round</th>
+                      </tr>
+                    </thead>
+                  </table>
 
-                <p>
-                  <label>
-                    Add source / effect:
-                    <select id="add-unit-options">
-                      <option value="select..." disabled selected>select...</option>
-                    </select>
-                  </label>
-                </p>
+                  <p>
+                    <label>
+                      Add source / effect:
+                      <select id="add-unit-options">
+                        <option value="select..." disabled selected>select...</option>
+                      </select>
+                    </label>
+                  </p>
 
-                <p class="button-row">
-                  <span id="render-progress" hidden>generating waveforms</span>
-                  <span id="dc-offset-warning" class="color-error" hidden>wavetable contains DC offsets</span>
-                </p>
-              </form>
+                  <p class="button-row">
+                    <span id="render-progress" hidden>generating waveforms</span>
+                    <span id="dc-offset-warning" class="color-error" hidden>wavetable contains DC offsets</span>
+                  </p>
+                </form>
+              </div>
+              <div id="presets-panel" role="tabpanel" aria-labelledby="presets-tab" hidden>
+                <div class="panel-heading">
+                  <h2>Presets</h2>
+                  <button
+                    id="save-preset-button"
+                    type="button"
+                    class="icon-button action-icon save-icon"
+                    aria-label="Save preset"
+                    title="Save preset"
+                  ></button>
+                </div>
+                <p id="preset-status" class="muted-status">Open this tab to load available presets.</p>
+                <div id="preset-list" class="preset-list"></div>
+                <div class="preset-pagination">
+                  <button id="preset-prev" type="button">Previous</button>
+                  <span id="preset-page-status" class="muted-status"></span>
+                  <button id="preset-next" type="button">Next</button>
+                </div>
+              </div>
             </section>
 
             <section>
@@ -561,7 +673,20 @@ function normalizeAppState(parsed: unknown): AppState | null {
       collapsedUnits: Array.isArray(ui.collapsedUnits)
         ? ui.collapsedUnits.filter((value): value is string => typeof value === "string")
         : [],
+      randomizationLocks: normalizeRandomizationLocks(ui.randomizationLocks),
     },
+  };
+}
+
+function normalizeRandomizationLocks(value: unknown): RandomizationLocks {
+  if (!isObject(value)) {
+    return { ...EMPTY_RANDOMIZATION_LOCKS };
+  }
+
+  return {
+    units: Array.isArray(value.units) ? value.units.filter((item): item is string => typeof item === "string") : [],
+    rows: Array.isArray(value.rows) ? value.rows.filter((item): item is string => typeof item === "string") : [],
+    fields: Array.isArray(value.fields) ? value.fields.filter((item): item is string => typeof item === "string") : [],
   };
 }
 
@@ -667,6 +792,7 @@ function readUiState(): UiState {
     addClmChunk: byId<HTMLInputElement>("file-clm").checked,
     addCycleLength: byId<HTMLInputElement>("file-cycle-length").checked,
     collapsedUnits: readCollapsedUnitKeys(),
+    randomizationLocks: readRandomizationLocks(),
   };
 }
 
@@ -734,6 +860,7 @@ function applyUiState(state: UiState): void {
   byId<HTMLInputElement>("file-clm").checked = state.addClmChunk;
   byId<HTMLInputElement>("file-cycle-length").checked = state.addCycleLength;
   applyCollapsedUnitKeys(state.collapsedUnits);
+  applyRandomizationLocks(state.randomizationLocks ?? EMPTY_RANDOMIZATION_LOCKS);
 }
 
 function initializeStateTracking(): void {
@@ -823,10 +950,347 @@ function applyCollapsedUnitKeys(keys: string[]): void {
   });
 }
 
+function readRandomizationLocks(): RandomizationLocks {
+  return {
+    units: getGeneratorBodies()
+      .filter((body) => isLockButtonPressed(body.querySelector<HTMLButtonElement>(".unit-lock")))
+      .map(unitRandomizationKey),
+    rows: Array.from(document.querySelectorAll<HTMLTableRowElement>(".unit-parameter"))
+      .filter((row) => isLockButtonPressed(row.querySelector<HTMLButtonElement>(".row-lock")))
+      .map(rowRandomizationKey)
+      .filter((key): key is string => Boolean(key)),
+    fields: Array.from(document.querySelectorAll<HTMLInputElement | HTMLSelectElement>(FIELD_SELECTOR))
+      .filter((control) => isFieldLocked(control))
+      .map(fieldRandomizationKey)
+      .filter((key): key is string => Boolean(key)),
+  };
+}
+
+function applyRandomizationLocks(locks: RandomizationLocks): void {
+  const unitLocks = new Set(locks.units);
+  const rowLocks = new Set(locks.rows);
+  const fieldLocks = new Set(locks.fields);
+
+  getGeneratorBodies().forEach((body) => {
+    const button = body.querySelector<HTMLButtonElement>(".unit-lock");
+    if (button) {
+      setLockButtonPressed(button, unitLocks.has(unitRandomizationKey(body)));
+    }
+  });
+
+  document.querySelectorAll<HTMLTableRowElement>(".unit-parameter").forEach((row) => {
+    const button = row.querySelector<HTMLButtonElement>(".row-lock");
+    const key = rowRandomizationKey(row);
+    if (button) {
+      setLockButtonPressed(button, Boolean(key && rowLocks.has(key)));
+    }
+  });
+
+  document.querySelectorAll<HTMLInputElement | HTMLSelectElement>(FIELD_SELECTOR).forEach((control) => {
+    const button = fieldLockButton(control);
+    const key = fieldRandomizationKey(control);
+    if (button) {
+      setLockButtonPressed(button, Boolean(key && fieldLocks.has(key)));
+    }
+  });
+}
+
+function isLockButtonPressed(button: HTMLButtonElement | null): boolean {
+  return button?.getAttribute("aria-pressed") === "true";
+}
+
+function unitRandomizationKey(body: HTMLTableSectionElement): string {
+  return body.dataset.unitName ?? "";
+}
+
+function rowRandomizationKey(row: HTMLTableRowElement): string | null {
+  const body = row.closest<HTMLTableSectionElement>(".unit-body");
+  const parameterName = row.dataset.parameterName;
+  return body && parameterName ? `${unitRandomizationKey(body)}::${parameterName}` : null;
+}
+
+function fieldRandomizationKey(control: HTMLInputElement | HTMLSelectElement): string | null {
+  const row = control.closest<HTMLTableRowElement>(".unit-parameter");
+  const rowKey = row ? rowRandomizationKey(row) : null;
+  const slot = control.dataset.fieldSlot;
+  return rowKey && slot ? `${rowKey}::${slot}` : null;
+}
+
+function fieldLockButton(control: HTMLInputElement | HTMLSelectElement): HTMLButtonElement | null {
+  return control.closest("td")?.querySelector<HTMLButtonElement>(".field-lock") ?? null;
+}
+
 function getGeneratorBodies(): HTMLTableSectionElement[] {
   return Array.from(document.querySelectorAll<HTMLTableSectionElement>(".unit-body")).filter(
     (body) => !body.classList.contains("unit-settings"),
   );
+}
+
+function getSelectedUnitBody(): HTMLTableSectionElement | null {
+  return document.querySelector<HTMLTableSectionElement>(".unit-body.unit-selected:not(.unit-settings)");
+}
+
+function getSelectedFieldControl(): HTMLInputElement | HTMLSelectElement | null {
+  return document.querySelector<HTMLInputElement | HTMLSelectElement>(".field-selected");
+}
+
+function selectUnitBody(body: HTMLTableSectionElement): void {
+  if (body.classList.contains("unit-settings")) {
+    return;
+  }
+
+  document.querySelectorAll(".unit-selected").forEach((element) => element.classList.remove("unit-selected"));
+  document.querySelectorAll(".row-selected").forEach((element) => element.classList.remove("row-selected"));
+  document.querySelectorAll(".field-selected").forEach((element) => element.classList.remove("field-selected"));
+  body.classList.add("unit-selected");
+}
+
+function selectGeneratorByOffset(offset: number): void {
+  const bodies = getGeneratorBodies();
+  if (bodies.length === 0) {
+    return;
+  }
+
+  const selected = getSelectedUnitBody();
+  const selectedIndex = selected ? bodies.indexOf(selected) : -1;
+  if (selectedIndex === -1) {
+    selectUnitBody(bodies[initialGeneratorSelectionIndex(bodies, offset)] as HTMLTableSectionElement);
+    return;
+  }
+
+  const nextIndex = (selectedIndex + offset + bodies.length) % bodies.length;
+  selectUnitBody(bodies[nextIndex] as HTMLTableSectionElement);
+}
+
+function initialGeneratorSelectionIndex(bodies: HTMLTableSectionElement[], offset: number): number {
+  const activeIndex = bodies.findIndex((body) => body.querySelector<HTMLInputElement>(".unit-enabled")?.checked);
+  if (activeIndex !== -1) {
+    return activeIndex;
+  }
+
+  return offset >= 0 ? 0 : bodies.length - 1;
+}
+
+function getFieldControls(body: HTMLTableSectionElement): Array<HTMLInputElement | HTMLSelectElement> {
+  return Array.from(body.querySelectorAll<HTMLInputElement | HTMLSelectElement>(FIELD_SELECTOR));
+}
+
+function selectFieldControl(control: HTMLInputElement | HTMLSelectElement): void {
+  const body = control.closest<HTMLTableSectionElement>(".unit-body");
+  const row = control.closest<HTMLTableRowElement>(".unit-parameter");
+  if (!body || !row || body.classList.contains("unit-settings")) {
+    return;
+  }
+
+  selectUnitBody(body);
+  row.classList.add("row-selected");
+  control.classList.add("field-selected");
+}
+
+function selectFieldByOffset(offset: number): void {
+  let body = getSelectedUnitBody();
+  if (!body) {
+    selectGeneratorByOffset(1);
+    body = getSelectedUnitBody();
+  }
+  if (!body) {
+    return;
+  }
+
+  const fields = getFieldControls(body);
+  if (fields.length === 0) {
+    return;
+  }
+
+  const selected = getSelectedFieldControl();
+  const selectedIndex = selected ? fields.indexOf(selected) : -1;
+  const baseIndex = selectedIndex === -1 ? (offset > 0 ? -1 : 0) : selectedIndex;
+  const nextIndex = (baseIndex + offset + fields.length) % fields.length;
+  selectFieldControl(fields[nextIndex] as HTMLInputElement | HTMLSelectElement);
+}
+
+function focusSelectedField(): void {
+  const selected = getSelectedFieldControl();
+  if (!selected) {
+    selectFieldByOffset(1);
+  }
+
+  const control = getSelectedFieldControl();
+  control?.focus();
+  if (control instanceof HTMLInputElement && control.type === "number") {
+    control.select();
+  }
+}
+
+function moveSelectedGenerator(offset: number): void {
+  const body = getSelectedUnitBody();
+  if (!body || offset === 0) {
+    return;
+  }
+
+  const bodies = getGeneratorBodies();
+  const selectedIndex = bodies.indexOf(body);
+  const targetIndex = selectedIndex + offset;
+  if (selectedIndex === -1 || targetIndex < 0 || targetIndex >= bodies.length) {
+    return;
+  }
+
+  if (offset < 0) {
+    bodies[targetIndex]?.before(body);
+  } else {
+    bodies[targetIndex]?.after(body);
+  }
+  selectUnitBody(body);
+  commitUserStateChange();
+  queueAutoGenerate();
+}
+
+function toggleSelectedGeneratorEnabled(): void {
+  const body = getSelectedUnitBody();
+  const enabled = body?.querySelector<HTMLInputElement>(".unit-enabled");
+  if (!body || !enabled) {
+    return;
+  }
+
+  enabled.checked = !enabled.checked;
+  selectUnitBody(body);
+  commitUserStateChange();
+  queueAutoGenerate();
+}
+
+function toggleSelectedGeneratorLock(): void {
+  const button = getSelectedUnitBody()?.querySelector<HTMLButtonElement>(".unit-lock");
+  if (button) {
+    toggleRandomizationLock(button);
+  }
+}
+
+function toggleSelectedRowLock(): void {
+  const row = getSelectedFieldControl()?.closest<HTMLTableRowElement>(".unit-parameter");
+  const button = row?.querySelector<HTMLButtonElement>(".row-lock");
+  if (button) {
+    toggleRandomizationLock(button);
+  }
+}
+
+function toggleSelectedFieldLock(): void {
+  const control = getSelectedFieldControl();
+  const button = control ? fieldLockButton(control) : null;
+  if (button) {
+    toggleRandomizationLock(button);
+  }
+}
+
+function randomizeAllActiveGenerators(): void {
+  const changed = getGeneratorBodies()
+    .filter((body) => body.querySelector<HTMLInputElement>(".unit-enabled")?.checked)
+    .reduce((didChange, body) => randomizeUnitBody(body) || didChange, false);
+  finishRandomization(changed);
+}
+
+function randomizeSelectedGenerator(): void {
+  const body = getSelectedUnitBody();
+  finishRandomization(Boolean(body && randomizeUnitBody(body)));
+}
+
+function randomizeSelectedRow(): void {
+  const row = getSelectedFieldControl()?.closest<HTMLTableRowElement>(".unit-parameter");
+  finishRandomization(Boolean(row && randomizeParameterRow(row)));
+}
+
+function randomizeSelectedField(): void {
+  const control = getSelectedFieldControl();
+  finishRandomization(Boolean(control && randomizeFieldControl(control)));
+}
+
+function randomizeUnitBody(body: HTMLTableSectionElement): boolean {
+  if (isUnitLocked(body)) {
+    return false;
+  }
+
+  return Array.from(body.querySelectorAll<HTMLTableRowElement>(".unit-parameter")).reduce(
+    (didChange, row) => randomizeParameterRow(row) || didChange,
+    false,
+  );
+}
+
+function randomizeParameterRow(row: HTMLTableRowElement): boolean {
+  if (isRowLocked(row)) {
+    return false;
+  }
+
+  return Array.from(row.querySelectorAll<HTMLInputElement | HTMLSelectElement>(FIELD_SELECTOR)).reduce(
+    (didChange, control) => randomizeFieldControl(control) || didChange,
+    false,
+  );
+}
+
+function randomizeFieldControl(control: HTMLInputElement | HTMLSelectElement): boolean {
+  const row = control.closest<HTMLTableRowElement>(".unit-parameter");
+  const body = control.closest<HTMLTableSectionElement>(".unit-body");
+  if (!row || !body || isUnitLocked(body) || isRowLocked(row) || isFieldLocked(control)) {
+    return false;
+  }
+
+  const before = control instanceof HTMLInputElement && control.type === "checkbox" ? String(control.checked) : control.value;
+  if (control instanceof HTMLInputElement && control.type === "checkbox") {
+    control.checked = Math.random() >= 0.5;
+  } else if (control instanceof HTMLSelectElement) {
+    const optionCount = control.options.length;
+    control.value = String(Math.min(optionCount - 1, Math.floor(Math.random() * optionCount)));
+  } else {
+    control.value = String(randomNumericControlValue(control));
+  }
+
+  const after = control instanceof HTMLInputElement && control.type === "checkbox" ? String(control.checked) : control.value;
+  return before !== after;
+}
+
+function randomNumericControlValue(control: HTMLInputElement): number {
+  const min = Number.isFinite(Number(control.min)) && control.min !== "" ? Number(control.min) : fallbackMinimum(control);
+  const max = Number.isFinite(Number(control.max)) && control.max !== "" ? Number(control.max) : fallbackMaximum(control, min);
+  const raw = min + Math.random() * (max - min);
+  if (Number.isInteger(min) && Number.isInteger(max)) {
+    return Math.round(raw);
+  }
+
+  return Math.round(raw * 1000) / 1000;
+}
+
+function fallbackMinimum(control: HTMLInputElement): number {
+  return control.classList.contains("linear-curve") ? -100 : 0;
+}
+
+function fallbackMaximum(control: HTMLInputElement, min: number): number {
+  const current = Number(control.value);
+  if (control.classList.contains("linear-curve")) {
+    return 100;
+  }
+  if (Number.isFinite(current) && current > min) {
+    return Math.max(current * 4, min + 1);
+  }
+  return min + 256;
+}
+
+function isUnitLocked(body: HTMLTableSectionElement): boolean {
+  return isLockButtonPressed(body.querySelector<HTMLButtonElement>(".unit-lock"));
+}
+
+function isRowLocked(row: HTMLTableRowElement): boolean {
+  return isLockButtonPressed(row.querySelector<HTMLButtonElement>(".row-lock"));
+}
+
+function isFieldLocked(control: HTMLInputElement | HTMLSelectElement): boolean {
+  return isLockButtonPressed(fieldLockButton(control));
+}
+
+function finishRandomization(changed: boolean): void {
+  if (!changed) {
+    return;
+  }
+
+  commitUserStateChange();
+  queueAutoGenerate();
 }
 
 function unitStateKey(body: HTMLTableSectionElement, index: number): string {
@@ -851,6 +1315,20 @@ function createUnitBody(definition: UnitDefinition, enabled: boolean): HTMLTable
   tbody.classList.add("unit-body", definition.kind);
   tbody.dataset.unitName = definition.name;
   tbody.dataset.unitKind = definition.kind;
+  tbody.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || tbody.classList.contains("unit-settings")) {
+      return;
+    }
+
+    const control = target.closest<HTMLInputElement | HTMLSelectElement>(FIELD_SELECTOR);
+    if (control) {
+      selectFieldControl(control);
+      return;
+    }
+
+    selectUnitBody(tbody);
+  });
 
   if (definition.kind === "settings") {
     tbody.classList.add("unit-settings");
@@ -898,6 +1376,9 @@ function createUnitBody(definition: UnitDefinition, enabled: boolean): HTMLTable
   if (definition.kind === "settings") {
     deleteCell.textContent = "";
   } else {
+    const lock = createLockButton("unit-lock", `Lock ${definition.name} against randomization`);
+    deleteCell.appendChild(lock);
+
     const button = document.createElement("button");
     button.type = "button";
     button.className = "icon-button unit-delete";
@@ -932,7 +1413,11 @@ function createParameterRow(kind: UnitDefinition["kind"], parameterName: string,
   row.className = "unit-parameter";
   row.dataset.parameterName = parameterName;
 
-  row.insertCell();
+  const rowLockCell = row.insertCell();
+  if (kind !== "settings") {
+    rowLockCell.appendChild(createLockButton("row-lock", `Lock ${parameterName} row against randomization`));
+  }
+
   const labelCell = row.insertCell();
   const label = document.createElement("label");
   label.textContent = spec.type ? `${parameterName} (${spec.type})` : parameterName;
@@ -940,7 +1425,7 @@ function createParameterRow(kind: UnitDefinition["kind"], parameterName: string,
 
   const startCell = row.insertCell();
   const startControl = createValueControl(spec, "linear-start");
-  startCell.appendChild(startControl);
+  appendFieldControl(startCell, startControl, "start", kind !== "settings");
 
   if (kind === "settings") {
     startCell.colSpan = 2;
@@ -951,23 +1436,67 @@ function createParameterRow(kind: UnitDefinition["kind"], parameterName: string,
 
   const endCell = row.insertCell();
   const endControl = createValueControl(spec, "linear-end");
-  endCell.appendChild(endControl);
+  appendFieldControl(endCell, endControl, "end", true);
 
   const curveCell = row.insertCell();
   const curve = document.createElement("input");
   curve.type = "number";
   curve.step = "any";
   curve.required = true;
+  curve.min = "-100";
+  curve.max = "100";
   curve.value = "0";
   curve.className = "linear-input linear-curve";
-  curveCell.appendChild(curve);
+  appendFieldControl(curveCell, curve, "curve", true);
 
   const roundCell = row.insertCell();
   const round = document.createElement("input");
   round.type = "checkbox";
   round.className = "linear-input linear-round";
-  roundCell.appendChild(round);
+  appendFieldControl(roundCell, round, "round", true);
   return row;
+}
+
+function appendFieldControl(
+  cell: HTMLTableCellElement,
+  control: HTMLInputElement | HTMLSelectElement,
+  slot: string,
+  lockable: boolean,
+): void {
+  control.dataset.fieldSlot = slot;
+  cell.classList.toggle("field-cell", lockable);
+  cell.appendChild(control);
+  if (lockable) {
+    cell.appendChild(createLockButton("field-lock", `Lock ${slot} field against randomization`));
+  }
+}
+
+function createLockButton(className: string, label: string): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `icon-button action-icon lock-icon ${className}`;
+  button.setAttribute("aria-label", label);
+  button.title = label;
+  setLockButtonPressed(button, false);
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleRandomizationLock(button);
+  });
+  return button;
+}
+
+function toggleRandomizationLock(button: HTMLButtonElement): void {
+  setLockButtonPressed(button, button.getAttribute("aria-pressed") !== "true");
+  commitUserStateChange();
+}
+
+function setLockButtonPressed(button: HTMLButtonElement, locked: boolean): void {
+  button.setAttribute("aria-pressed", String(locked));
+  button.classList.toggle("is-locked", locked);
+  const label = button.getAttribute("aria-label") ?? "Lock randomization";
+  const nextLabel = locked ? label.replace(/^Lock /, "Unlock ") : label.replace(/^Unlock /, "Lock ");
+  button.setAttribute("aria-label", nextLabel);
+  button.title = nextLabel;
 }
 
 function createValueControl(spec: ParameterSpec, className: string): HTMLInputElement | HTMLSelectElement {
@@ -1159,7 +1688,10 @@ function readUnit(body: HTMLTableSectionElement): UnitState {
 }
 
 async function generate(): Promise<void> {
-  const form = byId<HTMLFormElement>("generator-form");
+  const form = document.getElementById("generator-form") as HTMLFormElement | null;
+  if (!form) {
+    return;
+  }
   if (!form.reportValidity()) {
     return;
   }
@@ -1341,6 +1873,151 @@ async function shareCurrentState(): Promise<void> {
   }, 1600);
 }
 
+function showDesignerTab(tab: "generator" | "presets"): void {
+  const generatorSelected = tab === "generator";
+  byId<HTMLButtonElement>("generator-tab").setAttribute("aria-selected", String(generatorSelected));
+  byId<HTMLButtonElement>("presets-tab").setAttribute("aria-selected", String(!generatorSelected));
+  byId<HTMLElement>("generator-panel").hidden = !generatorSelected;
+  byId<HTMLElement>("presets-panel").hidden = generatorSelected;
+}
+
+async function ensurePresetsLoaded(): Promise<void> {
+  if (presetsLoaded) {
+    renderPresetPage();
+    return;
+  }
+
+  const status = byId("preset-status");
+  status.textContent = "Loading presets...";
+  try {
+    const response = await fetch(presetAssetUrl("index.json"));
+    if (!response.ok) {
+      throw new Error(`Preset index returned ${response.status}`);
+    }
+
+    const parsed = (await response.json()) as { presets?: unknown };
+    presetEntries = Array.isArray(parsed.presets)
+      ? parsed.presets
+          .filter(isPresetIndexEntry)
+          .map((entry) => ({ ...entry, description: entry.description ?? "" }))
+      : [];
+    presetsLoaded = true;
+    presetPage = 0;
+    renderPresetPage();
+  } catch (error) {
+    console.warn("Unable to load presets.", error);
+    status.textContent = "Unable to load presets.";
+    status.classList.add("color-error");
+  }
+}
+
+function isPresetIndexEntry(value: unknown): value is PresetIndexEntry {
+  return (
+    isObject(value) &&
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    typeof value.path === "string" &&
+    (value.description === undefined || typeof value.description === "string")
+  );
+}
+
+function renderPresetPage(): void {
+  const list = byId("preset-list");
+  const status = byId("preset-status");
+  const pageStatus = byId("preset-page-status");
+  const previous = byId<HTMLButtonElement>("preset-prev");
+  const next = byId<HTMLButtonElement>("preset-next");
+  list.innerHTML = "";
+
+  if (presetEntries.length === 0) {
+    status.textContent = "No presets are available yet.";
+    pageStatus.textContent = "";
+    previous.disabled = true;
+    next.disabled = true;
+    return;
+  }
+
+  status.textContent = "Choose a preset to load it into the generator.";
+  status.classList.remove("color-error");
+  const pageCount = Math.max(1, Math.ceil(presetEntries.length / PRESET_PAGE_SIZE));
+  presetPage = Math.min(Math.max(presetPage, 0), pageCount - 1);
+  const pageStart = presetPage * PRESET_PAGE_SIZE;
+  const pageEntries = presetEntries.slice(pageStart, pageStart + PRESET_PAGE_SIZE);
+
+  for (const preset of pageEntries) {
+    const item = document.createElement("article");
+    item.className = "preset-card";
+
+    const title = document.createElement("h3");
+    title.textContent = preset.name;
+    item.appendChild(title);
+
+    if (preset.description) {
+      const description = document.createElement("p");
+      description.textContent = preset.description;
+      item.appendChild(description);
+    }
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "preset-load";
+    button.textContent = "Load";
+    button.addEventListener("click", () => void loadPreset(preset));
+    item.appendChild(button);
+    list.appendChild(item);
+  }
+
+  pageStatus.textContent = `Page ${presetPage + 1} of ${pageCount}`;
+  previous.disabled = presetPage === 0;
+  next.disabled = presetPage >= pageCount - 1;
+}
+
+function changePresetPage(direction: number): void {
+  presetPage += direction;
+  renderPresetPage();
+}
+
+async function loadPreset(entry: PresetIndexEntry): Promise<void> {
+  const status = byId("preset-status");
+  status.textContent = `Loading ${entry.name}...`;
+  try {
+    const previousState = cloneState(readAppState());
+    const response = await fetch(presetAssetUrl(entry.path));
+    if (!response.ok) {
+      throw new Error(`Preset returned ${response.status}`);
+    }
+    const preset = (await response.json()) as PresetDocument;
+    applyDesignerState(preset.state);
+    applyRandomizationLocks(previousState.ui.randomizationLocks);
+    commitUserStateChange();
+    status.textContent = `Loaded ${preset.name || entry.name}.`;
+    void generate();
+  } catch (error) {
+    console.warn("Unable to load preset.", error);
+    status.textContent = `Unable to load ${entry.name}.`;
+    status.classList.add("color-error");
+  }
+}
+
+function presetAssetUrl(path: string): string {
+  const base = import.meta.env.BASE_URL.endsWith("/") ? import.meta.env.BASE_URL : `${import.meta.env.BASE_URL}/`;
+  return `${base}presets/${path}`;
+}
+
+function openSavePresetDialog(): void {
+  const textarea = byId<HTMLTextAreaElement>("save-preset-json");
+  textarea.value = JSON.stringify(
+    {
+      id: "your-preset-id",
+      name: "Your preset name",
+      state: readState(),
+    },
+    null,
+    2,
+  );
+  byId<HTMLDialogElement>("save-preset-dialog").showModal();
+}
+
 function requestPlotUpdate(): void {
   plotUpdateRequested = true;
 }
@@ -1364,9 +2041,18 @@ function plotLoop(): void {
 
 function installEventHandlers(): void {
   byId("open-info").addEventListener("click", () => byId<HTMLDialogElement>("info-dialog").showModal());
+  byId("open-help").addEventListener("click", () => byId<HTMLDialogElement>("help-dialog").showModal());
   byId("share-button").addEventListener("click", () => void shareCurrentState());
   byId("undo-button").addEventListener("click", undoState);
   byId("redo-button").addEventListener("click", redoState);
+  byId("generator-tab").addEventListener("click", () => showDesignerTab("generator"));
+  byId("presets-tab").addEventListener("click", () => {
+    showDesignerTab("presets");
+    void ensurePresetsLoaded();
+  });
+  byId("save-preset-button").addEventListener("click", openSavePresetDialog);
+  byId("preset-prev").addEventListener("click", () => changePresetPage(-1));
+  byId("preset-next").addEventListener("click", () => changePresetPage(1));
 
   byId<HTMLSelectElement>("theme-select").addEventListener("change", (event) => {
     const target = event.target;
@@ -1583,7 +2269,8 @@ function formatKnobOutput(id: string, value: number): string {
   }
 
   if (id === "audio-frequency") {
-    return `${Math.round(Math.pow(2, value))} Hz`;
+    const hz = Math.pow(2, value);
+    return `${Math.round(hz)} Hz (${nearestNoteName(hz)})`;
   }
 
   if (id === "audio-lfo") {
@@ -1591,6 +2278,17 @@ function formatKnobOutput(id: string, value: number): string {
   }
 
   return `${Math.round(value)}`;
+}
+
+function nearestNoteName(frequencyHz: number): string {
+  const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  if (!Number.isFinite(frequencyHz) || frequencyHz <= 0) {
+    return "C";
+  }
+
+  const midiNote = Math.round(12 * Math.log2(frequencyHz / 440) + 69);
+  const noteIndex = ((midiNote % 12) + 12) % 12;
+  return names[noteIndex] ?? "C";
 }
 
 async function toggleAudioPreview(): Promise<void> {
@@ -1790,7 +2488,98 @@ function handleDocumentKeyDown(event: KeyboardEvent): void {
     return;
   }
 
+  if (handleWorkflowShortcut(event)) {
+    return;
+  }
+
   handleKeyboardPreview(event);
+}
+
+function handleWorkflowShortcut(event: KeyboardEvent): boolean {
+  const target = event.target;
+  if (
+    event.ctrlKey ||
+    event.metaKey ||
+    event.altKey ||
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLSelectElement ||
+    target instanceof HTMLTextAreaElement
+  ) {
+    return false;
+  }
+
+  switch (event.key.toLowerCase()) {
+    case "j":
+      event.preventDefault();
+      selectGeneratorByOffset(1);
+      return true;
+    case "k":
+      event.preventDefault();
+      selectGeneratorByOffset(-1);
+      return true;
+    case "n":
+      event.preventDefault();
+      selectFieldByOffset(1);
+      return true;
+    case "p":
+      event.preventDefault();
+      selectFieldByOffset(-1);
+      return true;
+    case "e":
+      event.preventDefault();
+      focusSelectedField();
+      return true;
+    case "u":
+      event.preventDefault();
+      moveSelectedGenerator(-1);
+      return true;
+    case "d":
+      event.preventDefault();
+      moveSelectedGenerator(1);
+      return true;
+    case "m":
+      event.preventDefault();
+      toggleSelectedGeneratorEnabled();
+      return true;
+    case "a":
+      event.preventDefault();
+      randomizeAllActiveGenerators();
+      return true;
+    case "g":
+      event.preventDefault();
+      randomizeSelectedGenerator();
+      return true;
+    case "r":
+      event.preventDefault();
+      randomizeSelectedRow();
+      return true;
+    case "v":
+      event.preventDefault();
+      randomizeSelectedField();
+      return true;
+    case "1":
+      event.preventDefault();
+      toggleSelectedGeneratorLock();
+      return true;
+    case "2":
+      event.preventDefault();
+      toggleSelectedRowLock();
+      return true;
+    case "3":
+      event.preventDefault();
+      toggleSelectedFieldLock();
+      return true;
+    case "?":
+      event.preventDefault();
+      byId<HTMLDialogElement>("help-dialog").showModal();
+      return true;
+    case "i":
+      event.preventDefault();
+      byId<HTMLDialogElement>("info-dialog").showModal();
+      return true;
+    default:
+      return false;
+  }
 }
 
 function handleKeyboardPreview(event: KeyboardEvent): void {

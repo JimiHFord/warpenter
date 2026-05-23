@@ -1,0 +1,94 @@
+{
+  "id": "screenshot-resonant-clip-ring",
+  "name": "Resonant Clip Ring",
+  "state": {
+    "settings": {
+      "tableSizeBits": 11,
+      "tableSize": 2048,
+      "cycles": 128,
+      "fixNonZero": true,
+      "normalize": 2,
+      "removeDuplicates": true
+    },
+    "units": [
+      {
+        "name": "sinewave FM",
+        "kind": "sources",
+        "enabled": false,
+        "parameters": {
+          "modulator ratio": { "start": 1, "end": 1, "curve": 0, "round": false },
+          "modulator volume": { "start": -12, "end": -12, "curve": 0, "round": false },
+          "carrier ratio": { "start": 1, "end": 1, "curve": 0, "round": false },
+          "carrier volume": { "start": 0, "end": 0, "curve": 0, "round": false }
+        }
+      },
+      {
+        "name": "resonant sine",
+        "kind": "sources",
+        "enabled": true,
+        "parameters": {
+          "overtone ratio": { "start": 1, "end": 18, "curve": 12, "round": false },
+          "overtone shape": { "start": 63, "end": 0, "curve": 0, "round": false },
+          "volume": { "start": 0, "end": 0, "curve": 0, "round": false }
+        }
+      },
+      {
+        "name": "merged sine",
+        "kind": "sources",
+        "enabled": false,
+        "parameters": {
+          "ratio A": { "start": 1, "end": 1, "curve": 0, "round": false },
+          "ratio B": { "start": 1, "end": 1, "curve": 0, "round": false },
+          "volume": { "start": 0, "end": 0, "curve": 0, "round": false }
+        }
+      },
+      {
+        "name": "noise",
+        "kind": "sources",
+        "enabled": false,
+        "parameters": {
+          "seed": { "start": 1, "end": 1, "curve": 0, "round": false },
+          "rate": { "start": 32, "end": 32, "curve": 0, "round": false },
+          "ramp": { "start": 100, "end": 100, "curve": 0, "round": false },
+          "volume": { "start": 0, "end": 0, "curve": 0, "round": false }
+        }
+      },
+      {
+        "name": "hard clip",
+        "kind": "effects",
+        "enabled": true,
+        "parameters": {
+          "gain": { "start": 23, "end": 0, "curve": 0, "round": false },
+          "bias": { "start": 98, "end": -49, "curve": 0, "round": false }
+        }
+      },
+      {
+        "name": "soft clip",
+        "kind": "effects",
+        "enabled": false,
+        "parameters": {
+          "gain": { "start": 0, "end": 0, "curve": 0, "round": false },
+          "bias": { "start": 0, "end": 0, "curve": 0, "round": false }
+        }
+      },
+      {
+        "name": "downsample",
+        "kind": "effects",
+        "enabled": false,
+        "parameters": {
+          "rate": { "start": 32, "end": 32, "curve": 0, "round": false },
+          "ramp": { "start": 0, "end": 0, "curve": 0, "round": false }
+        }
+      },
+      {
+        "name": "ring mod",
+        "kind": "effects",
+        "enabled": true,
+        "parameters": {
+          "ratio": { "start": 31, "end": 17, "curve": 0, "round": false },
+          "carrier gain": { "start": 0, "end": 0, "curve": 0, "round": false }
+        }
+      }
+    ]
+  }
+}
