@@ -31,7 +31,6 @@ const appElement: HTMLDivElement = appRoot;
 
 const THEME_OPTIONS = [
   { id: "neon-purple", label: "Neon purple" },
-  { id: "virtual-riot", label: "Virtual Riot" },
   { id: "classic-orange", label: "Classic orange" },
   { id: "acid-lime", label: "Acid lime" },
   { id: "cyan-circuit", label: "Cyan circuit" },
@@ -43,6 +42,7 @@ const THEME_OPTIONS = [
   { id: "ultraviolet-mint", label: "Ultraviolet mint" },
   { id: "ocean-amber", label: "Ocean amber" },
   { id: "slate-rose", label: "Slate rose" },
+  { id: "virtual-riot", label: "Virtual Riot" },
 ] as const;
 
 type ThemeId = (typeof THEME_OPTIONS)[number]["id"];
