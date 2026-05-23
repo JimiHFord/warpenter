@@ -4,7 +4,10 @@
       "id": "screenshot-resonant-clip-ring",
       "name": "Resonant Clip Ring",
       "path": "screenshot-resonant-clip-ring.json",
-      "description": "The resonant sine, hard clip, and ring-mod patch used as the current default."
+      "description": "The resonant sine, hard clip, and ring-mod patch used as the current default.",
+      "modified": "2026-05-23T13:55:04-04:00",
+      "author": "Jimi Ford",
+      "authorUrl": "https://github.com/JimiHFord"
     }
   ]
 }

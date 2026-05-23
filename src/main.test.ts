@@ -4,6 +4,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockTables = [new Float32Array([0, 0.5, -0.5, 0])];
+const audioInstances = vi.hoisted(() => [] as Array<{
+  onCycle: ((cycle: number) => void) | null;
+  updateParameter: ReturnType<typeof vi.fn>;
+}>);
 let rafQueue: FrameRequestCallback[] = [];
 let documentListeners: Array<{
   type: string;
@@ -22,6 +26,10 @@ vi.mock("./audio", () => ({
     suspend = vi.fn(async () => undefined);
     setTransportRunning = vi.fn();
     triggerFromPosition = vi.fn();
+
+    constructor() {
+      audioInstances.push(this);
+    }
   },
 }));
 
@@ -48,6 +56,7 @@ describe("Warpenter app", () => {
     document.body.innerHTML = '<div id="app"></div>';
     window.localStorage.clear();
     window.history.replaceState({}, "", "/");
+    audioInstances.length = 0;
     const css = (window.CSS ?? {}) as { escape?: (value: string) => string };
     css.escape ??= (value: string) => value.replace(/"/g, '\\"');
     window.CSS = css as typeof window.CSS;
@@ -240,11 +249,61 @@ describe("Warpenter app", () => {
     document.getElementById("undo-button")?.click();
     await waitFor(() => parameterStartValue("modulator ratio") === originalValue);
 
-    document.getElementById("save-preset-button")?.click();
+    const clipboardWrite = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: clipboardWrite },
+    });
+
+    const topSaveButton = document.getElementById("header-save-preset-button");
+    expect(topSaveButton?.getAttribute("title")).toBe("Save preset");
+    topSaveButton?.click();
     const saveDialog = document.getElementById("save-preset-dialog") as HTMLDialogElement;
     expect(saveDialog.open).toBe(true);
     expect(saveDialog.textContent?.toLowerCase()).toContain("pull request");
     expect(saveDialog.textContent).toContain("public/presets");
+    expect(saveDialog.textContent).not.toContain("index.json");
+    expect(saveDialog.querySelector<HTMLAnchorElement>('a[href="https://github.com/JimiHFord/warpenter"]')).not.toBeNull();
+    expect(saveDialog.querySelector<HTMLDetailsElement>("#preset-json-details")?.open).toBe(false);
+    await waitFor(() => document.getElementById("save-preset-status")?.textContent?.includes("Copied"));
+
+    const presetJson = (document.getElementById("save-preset-json") as HTMLTextAreaElement).value;
+    expect(clipboardWrite).toHaveBeenCalledWith(presetJson);
+    const parsedPreset = JSON.parse(presetJson) as { id: string; name: string; description?: string };
+    expect(parsedPreset.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(parsedPreset.name).toMatch(/^[A-Z][a-z]+ [A-Z][a-z]+$/);
+    expect(parsedPreset.description).toBe("");
+
+    document.getElementById("copy-preset-json-button")?.click();
+    await Promise.resolve();
+    expect(clipboardWrite).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the selected position stable while showing LFO playback as a ghost indicator", async () => {
+    await bootApp();
+    const audio = audioInstances.at(-1);
+    const position = document.getElementById("audio-position") as HTMLInputElement;
+    const positionField = position.closest<HTMLElement>(".knob-field");
+    position.max = "127";
+    position.value = "12";
+
+    audio?.onCycle?.(47);
+
+    expect(position.value).toBe("12");
+    expect(positionField?.classList.contains("knob-ghost-active")).toBe(true);
+    expect(positionField?.style.getPropertyValue("--knob-ghost-angle")).not.toBe("");
+  });
+
+  it("sends literal zero to audio when the LFO UI rounds to zero", async () => {
+    await bootApp();
+    const audio = audioInstances.at(-1);
+    const lfo = document.getElementById("audio-lfo") as HTMLInputElement;
+    lfo.value = "0.3";
+    lfo.dispatchEvent(new InputEvent("input", { bubbles: true }));
+
+    expect(lfo.value).toBe("0");
+    expect((document.getElementById("audio-lfo-output") as HTMLOutputElement).value).toBe("0%");
+    expect(audio?.updateParameter).toHaveBeenCalledWith("lfo", 0);
   });
 });
 

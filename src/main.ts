@@ -31,6 +31,7 @@ const appElement: HTMLDivElement = appRoot;
 
 const THEME_OPTIONS = [
   { id: "neon-purple", label: "Neon purple" },
+  { id: "virtual-riot", label: "Virtual Riot" },
   { id: "classic-orange", label: "Classic orange" },
   { id: "acid-lime", label: "Acid lime" },
   { id: "cyan-circuit", label: "Cyan circuit" },
@@ -86,6 +87,9 @@ interface PresetIndexEntry {
   name: string;
   path: string;
   description?: string;
+  modified?: string;
+  author?: string;
+  authorUrl?: string;
 }
 
 interface PresetDocument {
@@ -102,6 +106,30 @@ const MAX_HISTORY_STATES = 100;
 const FIELD_SELECTOR = ".linear-start, .linear-end, .linear-curve, .linear-round";
 const EMPTY_RANDOMIZATION_LOCKS: RandomizationLocks = { units: [], rows: [], fields: [] };
 const PRESET_PAGE_SIZE = 8;
+const PRESET_ADJECTIVES = [
+  "Aerial",
+  "Bright",
+  "Cosmic",
+  "Electric",
+  "Glowing",
+  "Liquid",
+  "Neon",
+  "Prismatic",
+  "Velvet",
+  "Warped",
+] as const;
+const PRESET_NOUNS = [
+  "Anvil",
+  "Beacon",
+  "Chisel",
+  "Circuit",
+  "Frame",
+  "Lathe",
+  "Plank",
+  "Pulse",
+  "Spline",
+  "Vertex",
+] as const;
 
 const DEFAULT_AUDIO_STATE: AudioUiState = {
   volume: -36,
@@ -142,11 +170,7 @@ let activeKnobDrag:
 
 const audio = new WavetableAudio();
 audio.onCycle = (cycle) => {
-  const position = byId<HTMLInputElement>("audio-position");
-  position.value = String(cycle);
-  updateKnobVisual(position);
-  schedulePersistState();
-  requestPlotUpdate();
+  updatePositionGhost(cycle);
 };
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -217,16 +241,31 @@ function setupShell(): void {
       </form>
       <h2>Share A Preset</h2>
       <p>
-        Presets live as separate JSON files under <code>public/presets</code> so GitHub Pages can lazy-load them.
+        The preset JSON has been copied to your clipboard. You will need a GitHub account to contribute it.
       </p>
       <p>
-        To contribute one, fork the GitHub repository, add your preset JSON file, add it to
-        <code>public/presets/index.json</code>, and open a pull request.
+        Fork the
+        <a href="https://github.com/JimiHFord/warpenter" target="_blank" rel="noreferrer">Warpenter repository</a>,
+        add one JSON file under <code>public/presets</code>, paste this preset into that file, commit it, and open a pull request.
+        The preset name and blank description are starter values; please edit them before submitting.
       </p>
-      <label class="preset-json-label">
-        Current preset JSON
+      <p>
+        The CI pipeline regenerates the preset browser index automatically after merge, so preset pull requests only need the new preset JSON file.
+      </p>
+      <ol class="preset-steps">
+        <li>Fork the repository on GitHub.</li>
+        <li>Create <code>public/presets/&lt;preset-id&gt;.json</code> in your fork.</li>
+        <li>Paste the copied JSON, edit the name and optional description, then commit.</li>
+        <li>Open a pull request back to Warpenter.</li>
+      </ol>
+      <p id="save-preset-status" class="muted-status" role="status"></p>
+      <p class="button-row">
+        <button id="copy-preset-json-button" type="button">Copy JSON</button>
+      </p>
+      <details id="preset-json-details">
+        <summary>Current preset JSON</summary>
         <textarea id="save-preset-json" readonly></textarea>
-      </label>
+      </details>
     </dialog>
 
     <div id="flex-center">
@@ -248,6 +287,13 @@ function setupShell(): void {
               class="icon-button action-icon share-icon"
               aria-label="Share patch"
               title="Copy a URL for the current patch"
+            ></button>
+            <button
+              id="header-save-preset-button"
+              type="button"
+              class="icon-button action-icon save-icon"
+              aria-label="Save preset"
+              title="Save preset"
             ></button>
             <button
               id="undo-button"
@@ -449,7 +495,10 @@ function setupShell(): void {
                   <label class="knob-field" data-knob-for="audio-position">
                     <span>Position</span>
                     <span class="knob-shell">
-                      <span class="knob-face" aria-hidden="true"><span class="knob-pointer"></span></span>
+                      <span class="knob-face" aria-hidden="true">
+                        <span class="knob-ghost-pointer"></span>
+                        <span class="knob-pointer"></span>
+                      </span>
                       <input class="knob-input" type="range" id="audio-position" value="0" min="0" max="127">
                     </span>
                     <output id="audio-position-output" for="audio-position"></output>
@@ -771,11 +820,11 @@ function schedulePersistState(state = readAppState()): void {
 
 function readAudioState(): AudioUiState {
   return {
-    volume: Number(byId<HTMLInputElement>("audio-volume").value),
-    frequency: Number(byId<HTMLInputElement>("audio-frequency").value),
-    lfo: Number(byId<HTMLInputElement>("audio-lfo").value),
+    volume: readAudioControlValue(byId<HTMLInputElement>("audio-volume")),
+    frequency: readAudioControlValue(byId<HTMLInputElement>("audio-frequency")),
+    lfo: readAudioControlValue(byId<HTMLInputElement>("audio-lfo")),
     lfoMode: byId<HTMLSelectElement>("audio-lfo-mode").value === "pingpong" ? "pingpong" : "wrap",
-    position: Number(byId<HTMLInputElement>("audio-position").value),
+    position: readAudioControlValue(byId<HTMLInputElement>("audio-position")),
     midiEnabled: byId<HTMLInputElement>("midi-enabled").checked,
     midiInputId: byId<HTMLSelectElement>("midi-input").value || preferredMidiInputId,
   };
@@ -1917,7 +1966,10 @@ function isPresetIndexEntry(value: unknown): value is PresetIndexEntry {
     typeof value.id === "string" &&
     typeof value.name === "string" &&
     typeof value.path === "string" &&
-    (value.description === undefined || typeof value.description === "string")
+    (value.description === undefined || typeof value.description === "string") &&
+    (value.modified === undefined || typeof value.modified === "string") &&
+    (value.author === undefined || typeof value.author === "string") &&
+    (value.authorUrl === undefined || typeof value.authorUrl === "string")
   );
 }
 
@@ -1958,6 +2010,33 @@ function renderPresetPage(): void {
       item.appendChild(description);
     }
 
+    if (preset.author || preset.modified) {
+      const metadata = document.createElement("p");
+      metadata.className = "preset-metadata";
+      const parts: string[] = [];
+      if (preset.author) {
+        parts.push(`by ${preset.author}`);
+      }
+      if (preset.modified) {
+        parts.push(`updated ${formatPresetDate(preset.modified)}`);
+      }
+
+      if (preset.author && preset.authorUrl) {
+        const authorLink = document.createElement("a");
+        authorLink.href = preset.authorUrl;
+        authorLink.target = "_blank";
+        authorLink.rel = "noreferrer";
+        authorLink.textContent = preset.author;
+        metadata.append("by ", authorLink);
+        if (preset.modified) {
+          metadata.append(` · updated ${formatPresetDate(preset.modified)}`);
+        }
+      } else {
+        metadata.textContent = parts.join(" · ");
+      }
+      item.appendChild(metadata);
+    }
+
     const button = document.createElement("button");
     button.type = "button";
     button.className = "preset-load";
@@ -1970,6 +2049,14 @@ function renderPresetPage(): void {
   pageStatus.textContent = `Page ${presetPage + 1} of ${pageCount}`;
   previous.disabled = presetPage === 0;
   next.disabled = presetPage >= pageCount - 1;
+}
+
+function formatPresetDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
 function changePresetPage(direction: number): void {
@@ -2004,18 +2091,65 @@ function presetAssetUrl(path: string): string {
   return `${base}presets/${path}`;
 }
 
-function openSavePresetDialog(): void {
+async function openSavePresetDialog(): Promise<void> {
   const textarea = byId<HTMLTextAreaElement>("save-preset-json");
-  textarea.value = JSON.stringify(
-    {
-      id: "your-preset-id",
-      name: "Your preset name",
-      state: readState(),
-    },
-    null,
-    2,
-  );
+  textarea.value = JSON.stringify(createPresetDraft(), null, 2);
+  byId<HTMLDetailsElement>("preset-json-details").open = false;
+  byId("save-preset-status").textContent = "";
   byId<HTMLDialogElement>("save-preset-dialog").showModal();
+  await copyPresetJsonToClipboard();
+}
+
+function createPresetDraft(): PresetDocument & {
+  description: string;
+  author: { name: string; github: string };
+} {
+  return {
+    id: createUuidV4(),
+    name: createRandomPresetName(),
+    description: "",
+    author: {
+      name: "",
+      github: "",
+    },
+    state: readState(),
+  };
+}
+
+function createUuidV4(): string {
+  if ("randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (character) => {
+    const value = Number(character);
+    const randomByte = crypto.getRandomValues(new Uint8Array(1))[0] ?? 0;
+    return (value ^ (randomByte & (15 >> (value / 4)))).toString(16);
+  });
+}
+
+function createRandomPresetName(): string {
+  const adjective = PRESET_ADJECTIVES[Math.floor(Math.random() * PRESET_ADJECTIVES.length)] ?? "Neon";
+  const noun = PRESET_NOUNS[Math.floor(Math.random() * PRESET_NOUNS.length)] ?? "Pulse";
+  return `${adjective} ${noun}`;
+}
+
+async function copyPresetJsonToClipboard(): Promise<void> {
+  const status = byId("save-preset-status");
+  const textarea = byId<HTMLTextAreaElement>("save-preset-json");
+  try {
+    if (!navigator.clipboard) {
+      throw new Error("Clipboard unavailable");
+    }
+    await navigator.clipboard.writeText(textarea.value);
+    status.textContent = "Copied preset JSON to clipboard.";
+    status.classList.remove("color-error");
+    status.classList.add("muted-status");
+  } catch {
+    status.textContent = "Clipboard copy was not available. Use the Copy JSON button or copy from the collapsed JSON section.";
+    status.classList.add("color-error");
+    status.classList.remove("muted-status");
+  }
 }
 
 function requestPlotUpdate(): void {
@@ -2043,6 +2177,7 @@ function installEventHandlers(): void {
   byId("open-info").addEventListener("click", () => byId<HTMLDialogElement>("info-dialog").showModal());
   byId("open-help").addEventListener("click", () => byId<HTMLDialogElement>("help-dialog").showModal());
   byId("share-button").addEventListener("click", () => void shareCurrentState());
+  byId("header-save-preset-button").addEventListener("click", () => void openSavePresetDialog());
   byId("undo-button").addEventListener("click", undoState);
   byId("redo-button").addEventListener("click", redoState);
   byId("generator-tab").addEventListener("click", () => showDesignerTab("generator"));
@@ -2050,7 +2185,8 @@ function installEventHandlers(): void {
     showDesignerTab("presets");
     void ensurePresetsLoaded();
   });
-  byId("save-preset-button").addEventListener("click", openSavePresetDialog);
+  byId("save-preset-button").addEventListener("click", () => void openSavePresetDialog());
+  byId("copy-preset-json-button").addEventListener("click", () => void copyPresetJsonToClipboard());
   byId("preset-prev").addEventListener("click", () => changePresetPage(-1));
   byId("preset-next").addEventListener("click", () => changePresetPage(1));
 
@@ -2154,7 +2290,19 @@ function updateAudioParameters(): void {
 
 function updateAudioParameterFromInput(input: HTMLInputElement): void {
   const name = input.id.replace(/^audio-/, "") as "volume" | "frequency" | "position" | "lfo";
-  audio.updateParameter(name, Number(input.value));
+  const value = readAudioControlValue(input);
+  if (Number(input.value) !== value) {
+    input.value = String(value);
+  }
+  audio.updateParameter(name, value);
+}
+
+function readAudioControlValue(input: HTMLInputElement): number {
+  const value = Number(input.value);
+  if (input.id === "audio-lfo" && Math.round(value) === 0) {
+    return 0;
+  }
+  return value;
 }
 
 function installKnobDragHandlers(): void {
@@ -2237,7 +2385,7 @@ function updateKnobFromVerticalDrag(event: PointerEvent): void {
 function setInputValueFromNumber(input: HTMLInputElement, value: number): void {
   const step = input.step && input.step !== "any" ? Number(input.step) : 0;
   const nextValue = step > 0 ? Math.round(value / step) * step : value;
-  input.value = String(nextValue);
+  input.value = String(input.id === "audio-lfo" && Math.round(nextValue) === 0 ? 0 : nextValue);
 }
 
 function updateAllKnobs(): void {
@@ -2261,6 +2409,27 @@ function updateKnobVisual(input: HTMLInputElement): void {
   if (output) {
     output.value = formatKnobOutput(input.id, value);
   }
+}
+
+function updatePositionGhost(cycle: number): void {
+  const position = document.getElementById("audio-position") as HTMLInputElement | null;
+  const field = position?.closest<HTMLElement>(".knob-field");
+  if (!position || !field) {
+    return;
+  }
+
+  const min = Number(position.min || 0);
+  const max = Number(position.max || 0);
+  const range = max - min;
+  const percent = range === 0 ? 0 : Math.min(Math.max((cycle - min) / range, 0), 1);
+  field.style.setProperty("--knob-ghost-angle", `${-135 + percent * 270}deg`);
+  field.classList.add("knob-ghost-active");
+}
+
+function clearPositionGhost(): void {
+  const position = document.getElementById("audio-position") as HTMLInputElement | null;
+  const field = position?.closest<HTMLElement>(".knob-field");
+  field?.classList.remove("knob-ghost-active");
 }
 
 function formatKnobOutput(id: string, value: number): string {
@@ -2295,6 +2464,7 @@ async function toggleAudioPreview(): Promise<void> {
   if (previewRunning) {
     previewRunning = false;
     updateAudioPreviewButton();
+    clearPositionGhost();
     await syncPreviewTransport();
     return;
   }

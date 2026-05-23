@@ -85,7 +85,8 @@ class WaveTableProcessor extends AudioWorkletProcessor {
     }
 
     if (this.transportRunning && this.framesSincePositionUpdate > this.cycleModTimeout) {
-      let lfo = (parameters.lfo?.[0] ?? 0) / 100;
+      const rawLfo = parameters.lfo?.[0] ?? 0;
+      let lfo = (Math.round(rawLfo) === 0 ? 0 : rawLfo) / 100;
       lfo *= lfo * lfo;
       if (this.lfoMode === "pingpong") {
         this.cycleMod += (lfo / 25) * this.lfoDirection;

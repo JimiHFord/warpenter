@@ -66,10 +66,16 @@ randomization while keeping them editable.
 
 ## Presets
 
-Presets are lazy-loaded static JSON files under `public/presets/`. Add preset
-metadata to `public/presets/index.json`, place the preset state in its own JSON
-file, and open a pull request. The in-app save button shows the current patch as
-starter JSON for contributors.
+Presets are lazy-loaded static JSON files under `public/presets/`. To contribute
+one, use the in-app save button to copy starter JSON, create one new
+`public/presets/<preset-id>.json` file in a fork, edit the generated name and
+optional description, and open a pull request.
+
+Contributors do not need to edit `public/presets/index.json`. The GitHub Actions
+pipeline regenerates it from the preset files for deployment and commits the
+updated index back to `main` after merges. Index entries include the preset path,
+description, last modified date, author, and GitHub profile link when the preset
+JSON includes author metadata.
 
 ## License
 

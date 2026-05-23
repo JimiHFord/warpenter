@@ -49,6 +49,31 @@
   --error: #ff9fb4;
 }
 
+:root[data-theme="virtual-riot"] {
+  color-scheme: dark;
+  --bg: #050509;
+  --panel: #10101a;
+  --panel-2: #171827;
+  --input-bg: #070713;
+  --canvas-bg: #030308;
+  --text: #f7fbff;
+  --muted: #b5c1d6;
+  --line: #31415f;
+  --accent: #ff2bd6;
+  --accent-strong: #1fffea;
+  --accent-border: rgb(255 43 214 / 0.78);
+  --accent-subtle: rgb(31 255 234 / 0.18);
+  --accent-faint: rgb(255 43 214 / 0.54);
+  --button-bg: #1c1028;
+  --button-hover: #25173a;
+  --invalid-bg: #311224;
+  --body-top: rgb(14 12 26 / 0.92);
+  --body-bottom: rgb(3 3 8 / 0.98);
+  --green: #9dff7a;
+  --blue: #1fffea;
+  --error: #ff79a8;
+}
+
 :root[data-theme="acid-lime"] {
   color-scheme: dark;
   --bg: #07100b;
@@ -536,6 +561,10 @@ section {
   margin-top: 0;
 }
 
+.preset-metadata {
+  font-size: 0.85rem;
+}
+
 .preset-pagination {
   display: flex;
   gap: 0.75rem;
@@ -547,8 +576,18 @@ section {
   gap: 0.4rem;
 }
 
+.preset-steps {
+  color: var(--muted);
+}
+
+#preset-json-details {
+  margin-top: 1rem;
+}
+
 #save-preset-json {
+  width: 100%;
   min-height: 14rem;
+  margin-top: 0.75rem;
   resize: vertical;
   font-family: var(--mono-font, ui-monospace, SFMono-Regular, Consolas, monospace);
   font-size: 0.82rem;
@@ -904,6 +943,25 @@ tbody:has(input.unit-enabled:not(:checked)) tr.unit-parameter {
   background: var(--accent-strong);
   transform: translateX(-50%) rotate(var(--knob-angle));
   transform-origin: 50% 1.95rem;
+}
+
+.knob-ghost-pointer {
+  position: absolute;
+  top: 0.62rem;
+  left: 50%;
+  display: block;
+  width: 0.18rem;
+  height: 1.65rem;
+  border-radius: 999px;
+  background: var(--accent-strong);
+  opacity: 0;
+  transform: translateX(-50%) rotate(var(--knob-ghost-angle, -135deg));
+  transform-origin: 50% 1.95rem;
+  transition: opacity 120ms ease;
+}
+
+.knob-ghost-active .knob-ghost-pointer {
+  opacity: 0.46;
 }
 
 .knob-input {

@@ -1,6 +1,11 @@
 {
   "id": "screenshot-resonant-clip-ring",
   "name": "Resonant Clip Ring",
+  "description": "The resonant sine, hard clip, and ring-mod patch used as the current default.",
+  "author": {
+    "name": "Jimi Ford",
+    "github": "JimiHFord"
+  },
   "state": {
     "settings": {
       "tableSizeBits": 11,

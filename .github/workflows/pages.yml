@@ -16,6 +16,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  update-preset-index:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[skip ci]') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Regenerate preset index
+        run: npm run presets:index
+
+      - name: Commit preset index
+        shell: bash
+        run: |
+          if git diff --quiet -- public/presets/index.json; then
+            echo "Preset index is already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/presets/index.json
+          git commit -m "Regenerate preset index [skip ci]"
+          git push
+
   build:
     if: ${{ github.event.repository.private == false || vars.ENABLE_PRIVATE_PAGES == 'true' }}
     runs-on: windows-latest
@@ -50,6 +86,9 @@ jobs:
 
       - name: Install Emscripten
         run: npm run install:emsdk
+
+      - name: Generate preset index
+        run: npm run presets:index
 
       - name: Build
         run: npm run build
