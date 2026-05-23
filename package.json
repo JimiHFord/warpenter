@@ -1,0 +1,17 @@
+{
+  "name": "warpenter",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "dev": "npm run build:wasm && vite --host 127.0.0.1",
+    "build": "npm run build:wasm && tsc && vite build",
+    "install:emsdk": "powershell -ExecutionPolicy Bypass -File wasm-src/install-emsdk.ps1",
+    "build:wasm": "powershell -ExecutionPolicy Bypass -File wasm-src/build.ps1",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  }
+}

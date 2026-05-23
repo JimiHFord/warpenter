@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.vite*.log
+.tools/
+.env
+public/generator.js
+public/generator.wasm
+Wavetable Designer.htm
+Wavetable Designer_files/
+test/oracle/
+scripts/verify-wasm-parity.cjs
