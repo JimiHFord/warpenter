@@ -129,7 +129,7 @@ describe("Warpenter app", () => {
     expect(repoLink?.querySelector(".github-icon")).not.toBeNull();
 
     const frequencyOutput = document.getElementById("audio-frequency-output") as HTMLOutputElement;
-    expect(frequencyOutput.value).toMatch(/Hz \(C\)$/);
+    expect(frequencyOutput.value).toBe("42 Hz (E)");
   });
 
   it("uses compact per-generator parameter editors instead of the stale global column labels", async () => {
@@ -359,14 +359,17 @@ describe("Warpenter app", () => {
     );
   });
 
-  it("defaults the position LFO to 32% only when no persisted state exists", async () => {
+  it("defaults audio preview controls only when no persisted state exists", async () => {
     await bootApp();
 
+    expect(Number((document.getElementById("audio-frequency") as HTMLInputElement).value)).toBeCloseTo(Math.log2(42));
+    expect((document.getElementById("audio-frequency-output") as HTMLOutputElement).value).toBe("42 Hz (E)");
     expect((document.getElementById("audio-lfo") as HTMLInputElement).value).toBe("32");
     expect((document.getElementById("audio-lfo-output") as HTMLOutputElement).value).toBe("32%");
+    expect((document.getElementById("audio-lfo-mode") as HTMLSelectElement).value).toBe("pingpong");
   });
 
-  it("keeps a persisted position LFO instead of applying the first-load default", async () => {
+  it("keeps persisted audio preview controls instead of applying first-load defaults", async () => {
     const persistedFetchMock = vi.fn(defaultPresetFetch);
     vi.stubGlobal("fetch", persistedFetchMock);
     window.localStorage.setItem(
@@ -374,7 +377,9 @@ describe("Warpenter app", () => {
       JSON.stringify(
         appStateFixture({
           fileName: "saved-wavetable",
+          frequency: 6.0313,
           lfo: 0,
+          lfoMode: "wrap",
         }),
       ),
     );
@@ -382,8 +387,11 @@ describe("Warpenter app", () => {
     await bootApp();
 
     expect(persistedFetchMock).not.toHaveBeenCalled();
+    expect((document.getElementById("audio-frequency") as HTMLInputElement).value).toBe("6.0313");
+    expect((document.getElementById("audio-frequency-output") as HTMLOutputElement).value).toMatch(/Hz \(C\)$/);
     expect((document.getElementById("audio-lfo") as HTMLInputElement).value).toBe("0");
     expect((document.getElementById("audio-lfo-output") as HTMLOutputElement).value).toBe("0%");
+    expect((document.getElementById("audio-lfo-mode") as HTMLSelectElement).value).toBe("wrap");
   });
 
   it("keeps a persisted preview volume instead of applying the first-load default", async () => {
@@ -654,7 +662,9 @@ function defaultPresetDocument(): unknown {
   };
 }
 
-function appStateFixture(overrides: { fileName?: string; lfo?: number; volume?: number } = {}): unknown {
+function appStateFixture(
+  overrides: { fileName?: string; frequency?: number; lfo?: number; lfoMode?: "wrap" | "pingpong"; volume?: number } = {},
+): unknown {
   return {
     version: 1,
     designer: {
@@ -670,9 +680,9 @@ function appStateFixture(overrides: { fileName?: string; lfo?: number; volume?: 
     },
     audio: {
       volume: overrides.volume ?? -12,
-      frequency: 6.0313,
+      frequency: overrides.frequency ?? 6.0313,
       lfo: overrides.lfo ?? 32,
-      lfoMode: "wrap",
+      lfoMode: overrides.lfoMode ?? "wrap",
       position: 0,
       midiEnabled: false,
       midiInputId: "",

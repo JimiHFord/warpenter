@@ -10,6 +10,8 @@ function lerp(pos, a, b) {
   return (1 - pos) * a + pos * b;
 }
 
+const DEFAULT_FREQUENCY_LOG2 = Math.log2(42);
+
 class WaveTableProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -23,7 +25,7 @@ class WaveTableProcessor extends AudioWorkletProcessor {
     this.cycle = 0;
     this.cycleMod = 0;
     this.lfoDirection = 1;
-    this.lfoMode = "wrap";
+    this.lfoMode = "pingpong";
     this.prevPosition = 0;
     this.frameCount = 0;
     this.lastPositionSent = -1;
@@ -61,7 +63,7 @@ class WaveTableProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
       { name: "volume", defaultValue: -12, minValue: -96, maxValue: 0 },
-      { name: "frequency", defaultValue: 6 },
+      { name: "frequency", defaultValue: DEFAULT_FREQUENCY_LOG2 },
       { name: "position", defaultValue: 0, minValue: 0, maxValue: 1 },
       { name: "lfo", defaultValue: 0 },
     ];
@@ -75,7 +77,7 @@ class WaveTableProcessor extends AudioWorkletProcessor {
     }
 
     const bufSize = firstChannel.length;
-    const frequencyValues = parameters.frequency ?? new Float32Array([6]);
+    const frequencyValues = parameters.frequency ?? new Float32Array([DEFAULT_FREQUENCY_LOG2]);
     const volumeValues = parameters.volume ?? new Float32Array([-96]);
 
     const position = parameters.position?.[0] ?? 0;
@@ -110,7 +112,7 @@ class WaveTableProcessor extends AudioWorkletProcessor {
     const currentTable = this.waveTables[this.cycle];
     if (this.waveTables.length > 0 && currentTable && this.tableSize > 0) {
       for (let sampleIndex = 0; sampleIndex < bufSize; sampleIndex += 1) {
-        const frequency = frequencyValues[sampleIndex] ?? frequencyValues[0] ?? 6;
+        const frequency = frequencyValues[sampleIndex] ?? frequencyValues[0] ?? DEFAULT_FREQUENCY_LOG2;
         this.phaseInc = Math.pow(2, frequency) / sampleRate;
 
         let sample = this.sampleTables(this.waveTables, this.cycle);

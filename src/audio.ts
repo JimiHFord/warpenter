@@ -3,6 +3,8 @@ import workletUrl from "./wavetable-worklet.js?url";
 export type LfoMode = "wrap" | "pingpong";
 type AudioParameterName = "volume" | "frequency" | "position" | "lfo";
 
+const DEFAULT_FREQUENCY_HZ = 42;
+
 function dbToAmp(db: number): number {
   if (db <= -96) {
     return 0;
@@ -42,7 +44,7 @@ export class WavetableAudio {
     } catch (error) {
       console.warn("AudioWorklet unavailable; using oscillator fallback.", error);
       this.fallbackGain = new GainNode(this.context, { gain: 0 });
-      this.fallbackSource = new OscillatorNode(this.context, { type: "sine", frequency: 64 });
+      this.fallbackSource = new OscillatorNode(this.context, { type: "sine", frequency: DEFAULT_FREQUENCY_HZ });
       this.fallbackSource.connect(this.fallbackGain).connect(this.context.destination);
       this.fallbackSource.start();
     }

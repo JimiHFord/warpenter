@@ -104,6 +104,8 @@ const STORAGE_KEY = "warpenter-state-v1";
 const STORAGE_WRITE_DELAY_MS = 350;
 const USER_STATE_COMMIT_DELAY_MS = 600;
 const MAX_HISTORY_STATES = 100;
+const DEFAULT_FREQUENCY_HZ = 42;
+const DEFAULT_FREQUENCY_LOG2 = Math.log2(DEFAULT_FREQUENCY_HZ);
 const FIELD_SELECTOR = ".linear-start, .linear-end, .linear-curve, .linear-round";
 const EMPTY_RANDOMIZATION_LOCKS: RandomizationLocks = { units: [], rows: [], fields: [] };
 const PRESET_PAGE_SIZE = 8;
@@ -134,9 +136,9 @@ const PRESET_NOUNS = [
 
 const DEFAULT_AUDIO_STATE: AudioUiState = {
   volume: -12,
-  frequency: 6.0313,
+  frequency: DEFAULT_FREQUENCY_LOG2,
   lfo: 32,
-  lfoMode: "wrap",
+  lfoMode: "pingpong",
   position: 0,
   midiEnabled: false,
   midiInputId: "",
@@ -478,7 +480,7 @@ function setupShell(): void {
                     <span>Frequency</span>
                     <span class="knob-shell">
                       <span class="knob-face" aria-hidden="true"><span class="knob-pointer"></span></span>
-                      <input class="knob-input" type="range" id="audio-frequency" value="6.0313" min="3.0313" max="13.0313" step="any">
+                      <input class="knob-input" type="range" id="audio-frequency" value="${DEFAULT_FREQUENCY_LOG2}" min="3.0313" max="13.0313" step="any">
                     </span>
                     <output id="audio-frequency-output" for="audio-frequency"></output>
                   </label>
@@ -507,7 +509,7 @@ function setupShell(): void {
                     LFO mode
                     <select id="audio-lfo-mode">
                       <option value="wrap">Wrap</option>
-                      <option value="pingpong">Ping-pong</option>
+                      <option value="pingpong" selected>Ping-pong</option>
                     </select>
                   </label>
                   <label class="compact-control">
@@ -684,7 +686,8 @@ function normalizeAppState(parsed: unknown): AppState | null {
   const designer = parsed.designer as unknown as DesignerState;
   const audio = isObject(parsed.audio) ? parsed.audio : {};
   const ui = isObject(parsed.ui) ? parsed.ui : {};
-  const lfoMode = audio.lfoMode === "pingpong" ? "pingpong" : "wrap";
+  const lfoMode =
+    audio.lfoMode === "pingpong" || audio.lfoMode === "wrap" ? audio.lfoMode : DEFAULT_AUDIO_STATE.lfoMode;
   const format = ui.fileFormat === "wt" ? "wt" : "wav";
   const bits = ui.fileBits === 1 || ui.fileBits === 2 || ui.fileBits === 4 ? ui.fileBits : 4;
 
