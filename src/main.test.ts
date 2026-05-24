@@ -302,6 +302,34 @@ describe("Warpenter app", () => {
     expect(window.localStorage.getItem("warpenter-state-v1")).not.toBeNull();
   });
 
+  it("debounces repeated field increments into one undo history entry", async () => {
+    await bootApp();
+
+    const overtoneShape = document.querySelector<HTMLInputElement>(
+      'tr[data-parameter-name="overtone shape"] .linear-start',
+    );
+    const undoButton = document.getElementById("undo-button") as HTMLButtonElement;
+
+    for (const value of ["64", "65", "66", "67", "68"]) {
+      overtoneShape!.value = value;
+      overtoneShape!.dispatchEvent(new Event("input", { bubbles: true }));
+      overtoneShape!.dispatchEvent(new Event("change", { bubbles: true }));
+      vi.advanceTimersByTime(100);
+    }
+
+    expect(overtoneShape?.value).toBe("68");
+    expect(undoButton.disabled).toBe(true);
+    vi.advanceTimersByTime(499);
+    expect(undoButton.disabled).toBe(true);
+
+    vi.advanceTimersByTime(1);
+    expect(undoButton.disabled).toBe(false);
+
+    undoButton.click();
+    expect(parameterStartValue("overtone shape")).toBe("63");
+    expect(undoButton.disabled).toBe(true);
+  });
+
   it("starts first-load exports with a timestamped Warpenter filename", async () => {
     await bootApp();
     expect((document.getElementById("file-name") as HTMLInputElement).value).toMatch(

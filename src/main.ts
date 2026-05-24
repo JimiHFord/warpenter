@@ -102,6 +102,7 @@ const DEFAULT_EXPORT_FILE_NAME = createDefaultFileName();
 const DEFAULT_PRESET_FILE = "default.json";
 const STORAGE_KEY = "warpenter-state-v1";
 const STORAGE_WRITE_DELAY_MS = 350;
+const USER_STATE_COMMIT_DELAY_MS = 600;
 const MAX_HISTORY_STATES = 100;
 const FIELD_SELECTOR = ".linear-start, .linear-end, .linear-curve, .linear-round";
 const EMPTY_RANDOMIZATION_LOCKS: RandomizationLocks = { units: [], rows: [], fields: [] };
@@ -145,6 +146,7 @@ let draggingBody: HTMLTableSectionElement | null = null;
 let waveTables: Float32Array[] = [];
 let plotUpdateRequested = true;
 let storageTimer: number | null = null;
+let userStateCommitTimer: number | null = null;
 let copyFeedbackTimer: number | null = null;
 let lastCommittedState: AppState | null = null;
 let undoStack: AppState[] = [];
@@ -923,11 +925,45 @@ function initializeStateTracking(): void {
   schedulePersistState(lastCommittedState);
 }
 
+function scheduleUserStateChangeCommit(): void {
+  if (applyingState) {
+    return;
+  }
+
+  if (userStateCommitTimer !== null) {
+    window.clearTimeout(userStateCommitTimer);
+  }
+
+  userStateCommitTimer = window.setTimeout(() => {
+    userStateCommitTimer = null;
+    commitUserStateChange();
+  }, USER_STATE_COMMIT_DELAY_MS);
+}
+
+function clearPendingUserStateChangeCommit(): void {
+  if (userStateCommitTimer === null) {
+    return;
+  }
+
+  window.clearTimeout(userStateCommitTimer);
+  userStateCommitTimer = null;
+}
+
+function flushPendingUserStateChangeCommit(): void {
+  if (userStateCommitTimer === null) {
+    return;
+  }
+
+  clearPendingUserStateChangeCommit();
+  commitUserStateChange();
+}
+
 function commitUserStateChange(): void {
   if (applyingState) {
     return;
   }
 
+  clearPendingUserStateChangeCommit();
   const nextState = readAppState();
   if (!lastCommittedState) {
     lastCommittedState = cloneState(nextState);
@@ -952,6 +988,7 @@ function commitUserStateChange(): void {
 }
 
 function undoState(): void {
+  flushPendingUserStateChangeCommit();
   const previous = undoStack.pop();
   if (!previous) {
     return;
@@ -965,6 +1002,7 @@ function undoState(): void {
 }
 
 function redoState(): void {
+  flushPendingUserStateChangeCommit();
   const next = redoStack.pop();
   if (!next) {
     return;
@@ -1070,6 +1108,10 @@ function fieldRandomizationKey(control: HTMLInputElement | HTMLSelectElement): s
 
 function fieldLockButton(control: HTMLInputElement | HTMLSelectElement): HTMLButtonElement | null {
   return control.closest(".field-editor")?.querySelector<HTMLButtonElement>(".field-lock") ?? null;
+}
+
+function generatorFieldControlFromEventTarget(target: EventTarget | null): HTMLInputElement | HTMLSelectElement | null {
+  return target instanceof HTMLElement ? target.closest<HTMLInputElement | HTMLSelectElement>(FIELD_SELECTOR) : null;
 }
 
 function getGeneratorBodies(): HTMLTableSectionElement[] {
@@ -1958,6 +2000,7 @@ function updateFileStats(): void {
 }
 
 async function downloadCurrent(): Promise<void> {
+  flushPendingUserStateChangeCommit();
   await generate();
   if (waveTables.length === 0) {
     return;
@@ -2041,6 +2084,7 @@ async function importWaveFile(file: File | null): Promise<void> {
 }
 
 async function shareCurrentState(): Promise<void> {
+  flushPendingUserStateChangeCommit();
   commitUserStateChange();
   const url = new URL(window.location.href);
   url.searchParams.set("state", encodeShareState(readAppState()));
@@ -2398,23 +2442,34 @@ function installEventHandlers(): void {
 
   byId<HTMLFormElement>("generator-form").addEventListener("change", (event) => {
     const target = event.target;
+    const generatorField = generatorFieldControlFromEventTarget(target);
+    let shouldCommitImmediately = !generatorField;
     if (target instanceof HTMLSelectElement && target.id === "add-unit-options") {
       const definition = findDefinition(target.value);
       byId<HTMLTableElement>("unit-list").appendChild(createUnitBody(definition, true));
       target.selectedIndex = 0;
+      shouldCommitImmediately = true;
     }
     if (target instanceof HTMLInputElement && target.classList.contains("unit-enabled")) {
       const body = target.closest<HTMLTableSectionElement>(".unit-body");
       if (body) {
         syncUnitEnabledState(body);
       }
+      shouldCommitImmediately = true;
     }
-    commitUserStateChange();
+    if (shouldCommitImmediately) {
+      commitUserStateChange();
+    } else {
+      scheduleUserStateChangeCommit();
+    }
     regenerateNow();
   });
 
-  byId<HTMLFormElement>("generator-form").addEventListener("input", () => {
+  byId<HTMLFormElement>("generator-form").addEventListener("input", (event) => {
     schedulePersistState();
+    if (generatorFieldControlFromEventTarget(event.target)) {
+      scheduleUserStateChangeCommit();
+    }
     regenerateNow();
   });
 
